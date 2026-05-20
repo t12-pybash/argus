@@ -8,9 +8,14 @@ class OllamaClient:
 
     def ask(self, prompt: str) -> str:
         r = httpx.post(
-            f"{self.url}/api/generate",
-            json={"model": self.model, "prompt": prompt, "stream": False},
-            timeout=60,
+            f"{self.url}/chat/completions",
+            json={
+                "model": self.model,
+                "messages": [{"role": "user", "content": prompt}],
+                "stream": False,
+            },
+            verify=False,
+            timeout=120,
         )
         r.raise_for_status()
-        return r.json()["response"]
+        return r.json()["choices"][0]["message"]["content"]

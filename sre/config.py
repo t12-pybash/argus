@@ -6,8 +6,8 @@ DEFAULTS = {
     "prometheus_url": "https://prometheus.home.t12.io",
     "alertmanager_url": "https://alertmanager.home.t12.io",
     "loki_url": "http://loki.home.t12.io",
-    "ollama_url": "http://ollama.ai-platform.svc.cluster.local:11434",
-    "ollama_model": "llama3.2",
+    "ollama_url": "https://litellm.home.t12.io",
+    "ollama_model": "ollama/mistral",
     "vault_path": str(Path.home() / "Documents/obsidian-vault"),
 }
 
