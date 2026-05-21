@@ -10,7 +10,7 @@ console = Console()
 def ask(question: str):
     cfg = cfg_module.load()
     prom = PrometheusClient(cfg["prometheus_url"])
-    ollama = OllamaClient(cfg["ollama_url"], cfg["ollama_model"])
+    ollama = OllamaClient(cfg["ollama_url"], cfg["ollama_model"], cfg.get("ollama_api_key", ""))
 
     context_parts = []
 

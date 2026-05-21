@@ -7,7 +7,8 @@ DEFAULTS = {
     "alertmanager_url": "https://alertmanager.your-cluster.example",
     "loki_url": "http://loki.your-cluster.example",
     "ollama_url": "https://litellm.your-cluster.example",
-    "ollama_model": "ollama/mistral",
+    "ollama_model": "mistral",
+    "ollama_api_key": "",  # optional, only if LiteLLM master key is set
     "vault_path": str(Path.home() / "Documents/obsidian-vault"),
 }
 
