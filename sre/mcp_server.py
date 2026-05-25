@@ -81,7 +81,6 @@ def search_vault(query: str) -> str:
         return f"Vault not found at {_vault}"
 
     try:
-        from qdrant_client import QdrantClient
         embed_resp = httpx.post(
             f"{_cfg['embed_ollama_url']}/api/embeddings",
             json={"model": _cfg["embed_model"], "prompt": query},
@@ -90,16 +89,22 @@ def search_vault(query: str) -> str:
         embed_resp.raise_for_status()
         vec = embed_resp.json()["embedding"]
 
-        qclient = QdrantClient(url=_cfg["qdrant_url"], verify=False)
-        hits = qclient.search(collection_name="vault", query_vector=vec, limit=5)
+        search_resp = httpx.post(
+            f"{_cfg['qdrant_url']}/collections/vault/points/search",
+            json={"vector": vec, "limit": 5, "with_payload": True},
+            verify=False,
+            timeout=15,
+        )
+        search_resp.raise_for_status()
+        hits = search_resp.json().get("result", [])
 
         if not hits:
             return f"No semantic results found for '{query}'."
 
         lines = [f"## Vault search (semantic): '{query}'\n"]
         for hit in hits:
-            lines.append(f"### {hit.payload['file']} (score: {hit.score:.2f})")
-            lines.append(hit.payload["text"][:400])
+            lines.append(f"### {hit['payload']['file']} (score: {hit['score']:.2f})")
+            lines.append(hit["payload"]["text"][:400])
             lines.append("")
         return "\n".join(lines)
 
