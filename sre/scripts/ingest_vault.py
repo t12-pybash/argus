@@ -41,10 +41,10 @@ def embed(text: str, ollama_url: str) -> list[float]:
 def main():
     cfg = cfg_module.load()
     vault_path = Path(cfg["vault_path"])
-    ollama_url = cfg.get("ollama_url", "http://10.0.0.113:11434")
+    ollama_url = cfg.get("embed_ollama_url", "http://10.0.0.113:11434")
     qdrant_url = cfg.get("qdrant_url", "https://qdrant.home.t12.io")
 
-    client = QdrantClient(url=qdrant_url)
+    client = QdrantClient(url=qdrant_url, verify=False)
 
     sample_vec = embed("test", ollama_url)
     dim = len(sample_vec)
@@ -62,7 +62,14 @@ def main():
     md_files = list(vault_path.rglob("*.md"))
     print(f"Found {len(md_files)} markdown files")
 
+    BATCH_SIZE = 50
     points = []
+    total_chunks = 0
+
+    def flush(batch):
+        if batch:
+            client.upsert(collection_name=COLLECTION, points=batch)
+
     for path in md_files:
         text = path.read_text(errors="ignore")
         text = re.sub(r"^---.*?---\n", "", text, flags=re.DOTALL)
@@ -82,11 +89,14 @@ def main():
                     "text": chunk,
                 },
             ))
+            total_chunks += 1
             print(f"  {path.name} chunk {i}")
+            if len(points) >= BATCH_SIZE:
+                flush(points)
+                points = []
 
-    if points:
-        client.upsert(collection_name=COLLECTION, points=points)
-        print(f"\nIngested {len(points)} chunks from {len(md_files)} files")
+    flush(points)
+    print(f"\nIngested {total_chunks} chunks from {len(md_files)} files")
 
 
 if __name__ == "__main__":
