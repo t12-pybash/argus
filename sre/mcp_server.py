@@ -90,7 +90,7 @@ def search_vault(query: str) -> str:
         embed_resp.raise_for_status()
         vec = embed_resp.json()["embedding"]
 
-        qclient = QdrantClient(url=_cfg["qdrant_url"])
+        qclient = QdrantClient(url=_cfg["qdrant_url"], verify=False)
         hits = qclient.search(collection_name="vault", query_vector=vec, limit=5)
 
         if not hits:
