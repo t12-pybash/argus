@@ -8,8 +8,11 @@ DEFAULTS = {
     "loki_url": "http://loki.home.t12.io",
     "ollama_url": "https://litellm.home.t12.io",
     "ollama_model": "mistral",
-    "ollama_api_key": "",  # optional, only if LiteLLM master key is set
+    "ollama_api_key": "",
     "vault_path": str(Path.home() / "Documents/obsidian-vault"),
+    "qdrant_url": "https://qdrant.home.t12.io",
+    "embed_ollama_url": "http://10.0.0.113:11434",
+    "embed_model": "nomic-embed-text",
 }
 
 def load() -> dict:
