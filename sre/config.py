@@ -11,7 +11,7 @@ DEFAULTS = {
     "ollama_api_key": "",
     "vault_path": str(Path.home() / "Documents/obsidian-vault"),
     "qdrant_url": "https://qdrant.home.t12.io:443",
-    "embed_ollama_url": "http://10.0.0.113:11434",
+    "embed_ollama_url": "http://localhost:11434",
     "embed_model": "nomic-embed-text",
 }
 
