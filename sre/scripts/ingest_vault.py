@@ -41,8 +41,8 @@ def embed(text: str, ollama_url: str) -> list[float]:
 def main():
     cfg = cfg_module.load()
     vault_path = Path(cfg["vault_path"])
-    ollama_url = cfg.get("embed_ollama_url", "http://10.0.0.113:11434")
-    qdrant_url = cfg.get("qdrant_url", "https://qdrant.home.t12.io")
+    ollama_url = cfg.get("embed_ollama_url", "http://localhost:11434")
+    qdrant_url = cfg.get("qdrant_url", "https://qdrant.your-cluster.example")
 
     client = QdrantClient(url=qdrant_url, verify=False)
 

@@ -32,7 +32,7 @@ def _search(vec: list[float], qdrant_url: str, limit: int = 5) -> list[dict]:
 
 def runbook(query: str, ask: bool = False):
     cfg = cfg_module.load()
-    ollama_url = cfg.get("embed_ollama_url", "http://10.0.0.113:11434")
+    ollama_url = cfg.get("embed_ollama_url", "http://localhost:11434")
     embed_model = cfg.get("embed_model", "nomic-embed-text")
     qdrant_url = cfg["qdrant_url"]
 

@@ -3,14 +3,14 @@ import tomllib
 from pathlib import Path
 
 DEFAULTS = {
-    "prometheus_url": "https://prometheus.home.t12.io",
-    "alertmanager_url": "https://alertmanager.home.t12.io",
-    "loki_url": "http://loki.home.t12.io",
-    "ollama_url": "https://litellm.home.t12.io",
-    "ollama_model": "mistral",
+    "prometheus_url": "https://prometheus.your-cluster.example",
+    "alertmanager_url": "https://alertmanager.your-cluster.example",
+    "loki_url": "https://loki.your-cluster.example",
+    "ollama_url": "https://litellm.your-cluster.example",
+    "ollama_model": "llama3.2",
     "ollama_api_key": "",
     "vault_path": str(Path.home() / "Documents/obsidian-vault"),
-    "qdrant_url": "https://qdrant.home.t12.io:443",
+    "qdrant_url": "https://qdrant.your-cluster.example",
     "embed_ollama_url": "http://localhost:11434",
     "embed_model": "nomic-embed-text",
 }
