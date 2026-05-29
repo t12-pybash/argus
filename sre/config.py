@@ -17,7 +17,7 @@ DEFAULTS = {
 
 def load() -> dict:
     cfg = dict(DEFAULTS)
-    config_file = Path.home() / ".config" / "sre" / "config.toml"
+    config_file = Path(os.environ.get("SRE_CONFIG_FILE", str(Path.home() / ".config" / "sre" / "config.toml")))
     if config_file.exists():
         with open(config_file, "rb") as f:
             cfg.update(tomllib.load(f))
