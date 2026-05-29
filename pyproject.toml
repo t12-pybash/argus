@@ -13,6 +13,8 @@ dependencies = [
     "tomllib; python_version < '3.11'",
     "mcp[cli]>=1.0",
     "qdrant-client>=1.9",
+    "confluent-kafka>=2.3",
+    "watchdog>=4.0",
 ]
 
 [project.scripts]

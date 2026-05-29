@@ -13,6 +13,7 @@ DEFAULTS = {
     "qdrant_url": "https://qdrant.your-cluster.example",
     "embed_ollama_url": "http://localhost:11434",
     "embed_model": "nomic-embed-text",
+    "redpanda_url": "redpanda.messaging.svc.cluster.local:9092",
 }
 
 def load() -> dict:
