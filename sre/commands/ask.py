@@ -13,6 +13,11 @@ def ask(question: str):
     ollama = OllamaClient(cfg["ollama_url"], cfg["ollama_model"], cfg.get("ollama_api_key", ""))
 
     context_parts = []
+    ip_map = {}
+    try:
+        ip_map = prom.node_ip_map()
+    except Exception:
+        pass
 
     try:
         nodes = prom.nodes_up()
@@ -36,6 +41,22 @@ def ask(question: str):
         if restarts:
             lines = [f"- {r['metric'].get('namespace')}/{r['metric'].get('pod')}: {r['value'][1]} restarts" for r in restarts]
             context_parts.append("High-restart pods:\n" + "\n".join(lines))
+    except Exception:
+        pass
+
+    try:
+        cpu = prom.node_cpu_usage()
+        if cpu:
+            lines = [f"- {ip_map.get(r['metric'].get('instance'), r['metric'].get('instance'))}: {float(r['value'][1]):.1f}%" for r in cpu]
+            context_parts.append("Node CPU usage:\n" + "\n".join(lines))
+    except Exception:
+        pass
+
+    try:
+        mem = prom.node_memory_usage()
+        if mem:
+            lines = [f"- {ip_map.get(r['metric'].get('instance'), r['metric'].get('instance'))}: {float(r['value'][1]):.1f}%" for r in mem]
+            context_parts.append("Node memory usage:\n" + "\n".join(lines))
     except Exception:
         pass
 
