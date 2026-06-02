@@ -138,7 +138,7 @@ def main():
 
         chunks = chunk_text(text)
         for i, chunk in enumerate(chunks):
-            uid = hashlib.md5(f"{path}:{i}".encode()).hexdigest()
+            uid = hashlib.md5(f"{rel_path}:{i}".encode()).hexdigest()
             uid_int = int(uid, 16) % (2**63)
             vec = embed(chunk, ollama_url)
             points.append({
