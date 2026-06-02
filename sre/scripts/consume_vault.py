@@ -98,7 +98,7 @@ def process_message(http: httpx.Client, cfg: dict, payload: dict):
 
     points = [
         {
-            "id": abs(hash(f"{rel_path}:{i}")) % (2**53),
+            "id": int(hashlib.md5(f"{rel_path}:{i}".encode()).hexdigest(), 16) % (2**63),
             "vector": vec,
             "payload": {"file": rel_path, "chunk": i, "text": chunk, "hash": file_hash},
         }
