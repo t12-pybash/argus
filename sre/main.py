@@ -3,6 +3,7 @@ from sre.commands.status import status as _status
 from sre.commands.alert import alert as _alert
 from sre.commands.ask import ask as _ask
 from sre.commands.runbook import runbook as _runbook
+from sre.commands.diagnose import diagnose as _diagnose
 from sre.commands import incident as _inc
 
 app = typer.Typer(help="Homelab SRE CLI", no_args_is_help=True)
@@ -32,9 +33,19 @@ def ask(question: str = typer.Argument(..., help="Question to ask about the clus
 def runbook(
     query: str = typer.Argument(..., help="What to search for in the vault"),
     ask: bool = typer.Option(False, "--ask", "-a", help="Synthesise an answer via LLM"),
+    generate: bool = typer.Option(False, "--generate", "-g", help="Generate and save a structured runbook to vault"),
 ):
-    """Search vault runbooks semantically. Use --ask to get an LLM summary."""
-    _runbook(query, ask=ask)
+    """Search vault runbooks semantically. Use --ask to synthesise, --generate to create and save."""
+    _runbook(query, ask=ask, generate=generate)
+
+
+@app.command()
+def diagnose(
+    pod: str = typer.Argument(..., help="Pod reference as namespace/pod-name"),
+    save: bool = typer.Option(False, "--save", "-s", help="Save diagnosis as runbook to vault"),
+):
+    """Diagnose a crashing pod: fetches logs, events, describe and gets LLM root cause analysis."""
+    _diagnose(pod, save=save)
 
 
 @incident_app.command("start")

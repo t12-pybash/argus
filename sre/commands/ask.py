@@ -8,6 +8,7 @@ from sre.clients.kubernetes import (
     problem_pods, format_problem_pods_context,
     deployment_readiness, format_deployment_readiness_context,
     flux_sync_status, format_flux_context,
+    pod_exit_reason,
 )
 from sre import config as cfg_module
 
@@ -46,7 +47,17 @@ def ask(question: str):
     try:
         restarts = prom.pod_restarts()
         if restarts:
-            lines = [f"- {r['metric'].get('namespace')}/{r['metric'].get('pod')}: {r['value'][1]} restarts" for r in restarts]
+            lines = []
+            for r in restarts:
+                ns = r['metric'].get('namespace', '')
+                pod = r['metric'].get('pod', '')
+                count = r['value'][1]
+                try:
+                    reason = pod_exit_reason(ns, pod)
+                except Exception:
+                    reason = ""
+                suffix = f" [{reason}]" if reason else ""
+                lines.append(f"- {ns}/{pod}: {count} restarts{suffix}")
             context_parts.append("High-restart pods:\n" + "\n".join(lines))
     except Exception:
         pass
