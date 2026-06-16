@@ -7,6 +7,7 @@ from rich.table import Table
 
 from sre.clients.alertmanager import AlertmanagerClient
 from sre.clients.prometheus import PrometheusClient
+from sre.clients.qdrant import upsert_file
 from sre import config as cfg_module
 
 console = Console()
@@ -26,6 +27,21 @@ def _now() -> str:
 
 def _slug(title: str) -> str:
     return title.lower().replace(" ", "-").replace("/", "-")[:60]
+
+
+def _index(cfg: dict, vault_path: Path, path: Path):
+    try:
+        rel_path = str(path.relative_to(vault_path))
+        upsert_file(
+            cfg["qdrant_url"],
+            cfg.get("embed_ollama_url", cfg["ollama_url"]),
+            cfg.get("embed_model", "nomic-embed-text"),
+            rel_path,
+            path.read_text(),
+        )
+        console.print("[green]✓ Indexed into Qdrant.[/green]")
+    except Exception as e:
+        console.print(f"[yellow]⚠ Qdrant index failed ({e}).[/yellow]")
 
 
 def _cluster_snapshot(cfg: dict) -> str:
@@ -93,6 +109,7 @@ _Not yet resolved._
 
     console.print(f"[bold red]🚨 Incident started:[/bold red] {title}")
     console.print(f"[dim]Note file:[/dim] {path}")
+    _index(cfg, vault_path, path)
 
 
 def note(message: str):
@@ -131,6 +148,8 @@ def close(summary: str):
     ACTIVE_FILE.unlink()
     console.print(f"[bold green]✅ Incident closed:[/bold green] {state['title']}")
     console.print(f"[dim]{path}[/dim]")
+    cfg = cfg_module.load()
+    _index(cfg, Path(cfg["vault_path"]), path)
 
 
 def show():

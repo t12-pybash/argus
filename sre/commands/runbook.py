@@ -6,6 +6,7 @@ from rich.markdown import Markdown
 from rich.panel import Panel
 from rich import box
 from sre.clients.ollama import OllamaClient
+from sre.clients.qdrant import upsert_file
 from sre import config as cfg_module
 
 console = Console()
@@ -109,5 +110,17 @@ Be specific and include exact commands. This will be saved and used by the team.
         console.print(Markdown(response))
         vault_path = Path(cfg["vault_path"])
         path = _save_runbook(vault_path, query, response)
-        console.print(f"\n[green]✓ Saved to vault:[/green] {path}")
-        console.print("[dim]Searchable via `sre runbook` in ~10 minutes.[/dim]")
+        console.print(f"\n[green]✓ Saved:[/green] {path}")
+        try:
+            rel_path = str(path.relative_to(vault_path))
+            with console.status("[cyan]Indexing into Qdrant..."):
+                upsert_file(
+                    cfg["qdrant_url"],
+                    cfg.get("embed_ollama_url", cfg["ollama_url"]),
+                    cfg.get("embed_model", "nomic-embed-text"),
+                    rel_path,
+                    response,
+                )
+            console.print("[green]✓ Indexed — searchable now via `sre runbook`.[/green]")
+        except Exception as e:
+            console.print(f"[yellow]⚠ Qdrant index failed ({e}). Will be picked up on next vault sync.[/yellow]")
