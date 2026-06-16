@@ -8,6 +8,7 @@ from rich import box
 
 from sre.clients.kubernetes import pod_describe, pod_logs_previous, pod_events
 from sre.clients.ollama import OllamaClient
+from sre.clients.qdrant import upsert_file
 from sre import config as cfg_module
 
 console = Console()
@@ -100,5 +101,17 @@ Be direct and practical. No generic advice."""
     if save:
         vault_path = Path(cfg["vault_path"])
         path = _save_runbook(vault_path, namespace, pod, analysis)
-        console.print(f"\n[green]✓ Saved to vault:[/green] {path}")
-        console.print("[dim]Will be searchable via `sre runbook` in ~10 minutes.[/dim]")
+        console.print(f"\n[green]✓ Saved:[/green] {path}")
+        try:
+            rel_path = str(path.relative_to(vault_path))
+            with console.status("[cyan]Indexing into Qdrant..."):
+                upsert_file(
+                    cfg["qdrant_url"],
+                    cfg.get("embed_ollama_url", cfg["ollama_url"]),
+                    cfg.get("embed_model", "nomic-embed-text"),
+                    rel_path,
+                    path.read_text(),
+                )
+            console.print("[green]✓ Indexed — searchable now via `sre runbook`.[/green]")
+        except Exception as e:
+            console.print(f"[yellow]⚠ Qdrant index failed ({e}). Will be picked up on next vault sync.[/yellow]")
