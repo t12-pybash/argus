@@ -5,7 +5,7 @@ WORKDIR /app
 COPY pyproject.toml README.md ./
 COPY sre ./sre
 
-RUN apt-get update && apt-get install -y --no-install-recommends rsync openssh-client && \
+RUN apt-get update && apt-get install -y --no-install-recommends git openssh-client && \
     rm -rf /var/lib/apt/lists/* && \
     pip install --no-cache-dir -e .
 
