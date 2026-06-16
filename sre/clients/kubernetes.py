@@ -133,3 +133,35 @@ def format_flux_context(issues: list[dict]) -> str:
         return "Flux: all Kustomizations and HelmReleases synced"
     lines = [f"  {i['kind']}/{i['namespace']}/{i['name']}: {i['message']}".rstrip() for i in issues]
     return "Flux sync issues:\n" + "\n".join(lines)
+
+
+def pod_exit_reason(namespace: str, pod: str) -> str:
+    """Returns 'OOMKilled (exit 137)' style string, or empty if no last terminated state."""
+    out = _run([
+        "kubectl", "get", "pod", pod, "-n", namespace, "-o",
+        "jsonpath={.status.containerStatuses[0].lastState.terminated.reason} {.status.containerStatuses[0].lastState.terminated.exitCode}"
+    ]).strip()
+    if not out or out == " ":
+        return ""
+    parts = out.split()
+    reason = parts[0] if parts else ""
+    code = parts[1] if len(parts) > 1 else ""
+    if reason and code:
+        return f"{reason} (exit {code})"
+    return reason
+
+
+def pod_describe(namespace: str, pod: str) -> str:
+    return _run(["kubectl", "describe", "pod", pod, "-n", namespace])
+
+
+def pod_logs_previous(namespace: str, pod: str, tail: int = 50) -> str:
+    return _run(["kubectl", "logs", pod, "-n", namespace, "--previous", f"--tail={tail}"])
+
+
+def pod_events(namespace: str, pod: str) -> str:
+    return _run([
+        "kubectl", "get", "events", "-n", namespace,
+        f"--field-selector=involvedObject.name={pod}",
+        "--sort-by=.lastTimestamp"
+    ])

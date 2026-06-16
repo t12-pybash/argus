@@ -1,4 +1,6 @@
 import httpx
+from datetime import datetime
+from pathlib import Path
 from rich.console import Console
 from rich.markdown import Markdown
 from rich.panel import Panel
@@ -11,12 +13,13 @@ console = Console()
 
 def _embed(text: str, ollama_url: str, model: str) -> list[float]:
     resp = httpx.post(
-        f"{ollama_url}/api/embeddings",
-        json={"model": model, "prompt": text},
+        f"{ollama_url}/api/embed",
+        json={"model": model, "input": text},
+        verify=False,
         timeout=30,
     )
     resp.raise_for_status()
-    return resp.json()["embedding"]
+    return resp.json()["embeddings"][0]
 
 
 def _search(vec: list[float], qdrant_url: str, limit: int = 5) -> list[dict]:
@@ -30,7 +33,17 @@ def _search(vec: list[float], qdrant_url: str, limit: int = 5) -> list[dict]:
     return resp.json().get("result", [])
 
 
-def runbook(query: str, ask: bool = False):
+def _save_runbook(vault_path: Path, topic: str, content: str) -> Path:
+    runbook_dir = vault_path / "3 - Resources" / "Homelab" / "Runbooks"
+    runbook_dir.mkdir(parents=True, exist_ok=True)
+    slug = topic.lower().replace(" ", "-").replace("/", "-")[:60]
+    ts = datetime.now().strftime("%Y-%m-%d")
+    path = runbook_dir / f"{ts}-{slug}.md"
+    path.write_text(f"# Runbook: {topic}\n\n*Generated: {datetime.now().strftime('%Y-%m-%d %H:%M')}*\n\n{content}\n")
+    return path
+
+
+def runbook(query: str, ask: bool = False, generate: bool = False):
     cfg = cfg_module.load()
     ollama_url = cfg.get("embed_ollama_url", "http://localhost:11434")
     embed_model = cfg.get("embed_model", "nomic-embed-text")
@@ -58,8 +71,10 @@ def runbook(query: str, ask: bool = False):
             expand=False,
         ))
 
+    llm = OllamaClient(cfg["ollama_url"], cfg["ollama_model"], cfg.get("ollama_api_key", ""))
+    context = "\n\n---\n\n".join(chunks_for_llm)
+
     if ask:
-        context = "\n\n---\n\n".join(chunks_for_llm)
         prompt = f"""You are an SRE assistant. The user searched their runbook vault for: "{query}"
 
 Here are the most relevant vault notes:
@@ -67,8 +82,32 @@ Here are the most relevant vault notes:
 {context}
 
 Summarise the relevant steps or information concisely. Focus on actionable content."""
-        llm = OllamaClient(cfg["ollama_url"], cfg["ollama_model"], cfg.get("ollama_api_key", ""))
         with console.status("[cyan]Synthesising answer..."):
             response = llm.ask(prompt)
         console.print("\n")
         console.print(Markdown(response))
+
+    if generate:
+        prompt = f"""You are a senior SRE writing a structured runbook for: "{query}"
+
+Use these existing vault notes as context:
+
+{context}
+
+Write a complete runbook in markdown with these sections:
+## Symptoms
+## Root Cause
+## Diagnosis Steps
+## Fix Steps
+## Verification
+## Prevention
+
+Be specific and include exact commands. This will be saved and used by the team."""
+        with console.status("[cyan]Generating runbook..."):
+            response = llm.ask(prompt)
+        console.print("\n")
+        console.print(Markdown(response))
+        vault_path = Path(cfg["vault_path"])
+        path = _save_runbook(vault_path, query, response)
+        console.print(f"\n[green]✓ Saved to vault:[/green] {path}")
+        console.print("[dim]Searchable via `sre runbook` in ~10 minutes.[/dim]")
