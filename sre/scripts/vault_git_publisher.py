@@ -41,6 +41,9 @@ def setup_ssh():
     with open(ssh_dir / "known_hosts", "a") as f:
         f.write(result.stdout)
 
+    # PVC may be owned by a different UID than the pod — mark it safe
+    subprocess.run(["git", "config", "--global", "--add", "safe.directory", str(VAULT_DIR)], check=True)
+
 
 def git(*args, cwd=None) -> str:
     result = subprocess.run(
