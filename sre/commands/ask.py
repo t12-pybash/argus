@@ -2,6 +2,7 @@ from rich.console import Console
 from rich.markdown import Markdown
 from sre.clients.prometheus import PrometheusClient
 from sre.clients.ollama import OllamaClient
+from sre.clients.kubernetes import running_pods_by_namespace, format_pods_context
 from sre import config as cfg_module
 
 console = Console()
@@ -57,6 +58,13 @@ def ask(question: str):
         if mem:
             lines = [f"- {ip_map.get(r['metric'].get('instance'), r['metric'].get('instance'))}: {float(r['value'][1]):.1f}%" for r in mem]
             context_parts.append("Node memory usage:\n" + "\n".join(lines))
+    except Exception:
+        pass
+
+    try:
+        ns_pods = running_pods_by_namespace()
+        if ns_pods:
+            context_parts.append(format_pods_context(ns_pods))
     except Exception:
         pass
 
