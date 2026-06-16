@@ -2,7 +2,13 @@ from rich.console import Console
 from rich.markdown import Markdown
 from sre.clients.prometheus import PrometheusClient
 from sre.clients.ollama import OllamaClient
-from sre.clients.kubernetes import running_pods_by_namespace, format_pods_context
+from sre.clients.kubernetes import (
+    running_pods_by_namespace, format_pods_context,
+    pvcs, format_pvcs_context,
+    problem_pods, format_problem_pods_context,
+    deployment_readiness, format_deployment_readiness_context,
+    flux_sync_status, format_flux_context,
+)
 from sre import config as cfg_module
 
 console = Console()
@@ -65,6 +71,38 @@ def ask(question: str):
         ns_pods = running_pods_by_namespace()
         if ns_pods:
             context_parts.append(format_pods_context(ns_pods))
+    except Exception:
+        pass
+
+    try:
+        pvc_list = pvcs()
+        context_parts.append(format_pvcs_context(pvc_list))
+    except Exception:
+        pass
+
+    try:
+        prob = problem_pods()
+        context_parts.append(format_problem_pods_context(prob))
+    except Exception:
+        pass
+
+    try:
+        deps = deployment_readiness()
+        context_parts.append(format_deployment_readiness_context(deps))
+    except Exception:
+        pass
+
+    try:
+        disk = prom.node_disk_usage()
+        if disk:
+            lines = [f"- {ip_map.get(r['metric'].get('instance'), r['metric'].get('instance'))}: {float(r['value'][1]):.1f}%" for r in disk]
+            context_parts.append("Node disk usage (/):\n" + "\n".join(lines))
+    except Exception:
+        pass
+
+    try:
+        flux = flux_sync_status()
+        context_parts.append(format_flux_context(flux))
     except Exception:
         pass
 

@@ -35,3 +35,9 @@ class PrometheusClient:
 
     def node_memory_usage(self) -> list:
         return self.query('100 - (node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes * 100)')
+
+    def node_disk_usage(self) -> list:
+        return self.query(
+            '100 - (node_filesystem_avail_bytes{mountpoint="/",fstype!="tmpfs"} '
+            '/ node_filesystem_size_bytes{mountpoint="/",fstype!="tmpfs"} * 100)'
+        )
