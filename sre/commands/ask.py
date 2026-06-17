@@ -4,9 +4,8 @@ from rich.markdown import Markdown
 from sre.clients.prometheus import PrometheusClient
 from sre.clients.ollama import OllamaClient
 from sre.clients.kubernetes import (
-    running_pods_by_namespace, format_pods_context,
+    running_and_problem_pods, format_pods_context, format_problem_pods_context,
     pvcs, format_pvcs_context,
-    problem_pods, format_problem_pods_context,
     deployment_readiness, format_deployment_readiness_context,
     flux_sync_status, format_flux_context,
     pod_exit_reason,
@@ -76,15 +75,16 @@ def ask(question: str):
         lines = [f"- {ip_map.get(r['metric'].get('instance'), r['metric'].get('instance'))}: {float(r['value'][1]):.1f}%" for r in disk]
         return "Node disk usage (/):\n" + "\n".join(lines)
 
-    def _pods():
-        ns_pods = running_pods_by_namespace()
-        return format_pods_context(ns_pods) if ns_pods else None
+    def _pods_and_problems():
+        running, problems = running_and_problem_pods()
+        parts = []
+        if running:
+            parts.append(format_pods_context(running))
+        parts.append(format_problem_pods_context(problems))
+        return "\n\n".join(parts)
 
     def _pvcs():
         return format_pvcs_context(pvcs())
-
-    def _problem_pods():
-        return format_problem_pods_context(problem_pods())
 
     def _deployments():
         return format_deployment_readiness_context(deployment_readiness())
@@ -92,7 +92,7 @@ def ask(question: str):
     def _flux():
         return format_flux_context(flux_sync_status())
 
-    tasks = [_nodes, _alerts, _restarts, _cpu, _mem, _disk, _pods, _pvcs, _problem_pods, _deployments, _flux]
+    tasks = [_nodes, _alerts, _restarts, _cpu, _mem, _disk, _pods_and_problems, _pvcs, _deployments, _flux]
 
     with ThreadPoolExecutor(max_workers=len(tasks)) as executor:
         futures = [executor.submit(t) for t in tasks]
