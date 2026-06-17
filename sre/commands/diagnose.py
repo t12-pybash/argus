@@ -90,7 +90,7 @@ Pod: {namespace}/{pod}
 Diagnose this specific pod using only the evidence above. Do not give generic Kubernetes advice.
 
 Relevant Kubernetes facts to apply when interpreting the evidence:
-- DNSConfigForming / "Nameserver limits were exceeded": The node has TOO MANY nameservers in /etc/resolv.conf. Kubernetes caps the total at 3. The fix is to REMOVE excess nameservers from /etc/resolv.conf on the affected node so only 3 remain. Do NOT add nameservers — that makes it worse. Steps: (1) find the node with `kubectl get pod <pod> -n <ns> -o jsonpath='{.spec.nodeName}'`, (2) SSH to it, (3) edit /etc/resolv.conf to leave only 3 nameserver lines.
+- DNSConfigForming / "Nameserver limits were exceeded": The node has TOO MANY nameservers in /etc/resolv.conf. Kubernetes caps the total at 3. The fix is to REMOVE excess nameservers from /etc/resolv.conf on the affected node so only 3 remain. Do NOT add nameservers — that makes it worse. Steps: (1) find the node with `kubectl get pod <pod> -n <ns> -o jsonpath='{{.spec.nodeName}}'`, (2) SSH to it, (3) edit /etc/resolv.conf to leave only 3 nameserver lines.
 - OOMKilled: container hit its memory limit. Fix: raise resources.limits.memory or reduce memory usage.
 - CrashLoopBackOff with exit code 1: application error — check logs for the actual error message.
 - ImagePullBackOff: image not found or registry unreachable. Fix: verify image name/tag and registry credentials.
