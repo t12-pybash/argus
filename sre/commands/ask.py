@@ -1,3 +1,4 @@
+from concurrent.futures import ThreadPoolExecutor
 from rich.console import Console
 from rich.markdown import Markdown
 from sre.clients.prometheus import PrometheusClient
@@ -20,102 +21,90 @@ def ask(question: str):
     prom = PrometheusClient(cfg["prometheus_url"])
     ollama = OllamaClient(cfg["ollama_url"], cfg["ollama_model"], cfg.get("ollama_api_key", ""))
 
-    context_parts = []
     ip_map = {}
     try:
         ip_map = prom.node_ip_map()
     except Exception:
         pass
 
-    try:
+    def _nodes():
         nodes = prom.nodes_up()
-        node_lines = [f"- {n['metric'].get('instance')} ({n['metric'].get('job')}): {'UP' if n['value'][1]=='1' else 'DOWN'}" for n in nodes]
-        context_parts.append("Nodes:\n" + "\n".join(node_lines))
-    except Exception:
-        pass
+        lines = [f"- {n['metric'].get('instance')} ({n['metric'].get('job')}): {'UP' if n['value'][1]=='1' else 'DOWN'}" for n in nodes]
+        return "Nodes:\n" + "\n".join(lines)
 
-    try:
+    def _alerts():
         alerts = prom.firing_alerts()
         if alerts:
-            alert_lines = [f"- {a['metric'].get('alertname')}" for a in alerts]
-            context_parts.append("Firing alerts:\n" + "\n".join(alert_lines))
-        else:
-            context_parts.append("Firing alerts: none")
-    except Exception:
-        pass
+            return "Firing alerts:\n" + "\n".join(f"- {a['metric'].get('alertname')}" for a in alerts)
+        return "Firing alerts: none"
 
-    try:
+    def _restarts():
         restarts = prom.pod_restarts()
-        if restarts:
-            lines = []
-            for r in restarts:
-                ns = r['metric'].get('namespace', '')
-                pod = r['metric'].get('pod', '')
-                count = r['value'][1]
-                try:
-                    reason = pod_exit_reason(ns, pod)
-                except Exception:
-                    reason = ""
-                suffix = f" [{reason}]" if reason else ""
-                lines.append(f"- {ns}/{pod}: {count} restarts{suffix}")
-            context_parts.append("High-restart pods:\n" + "\n".join(lines))
-    except Exception:
-        pass
+        if not restarts:
+            return None
+        lines = []
+        for r in restarts:
+            ns = r['metric'].get('namespace', '')
+            pod = r['metric'].get('pod', '')
+            count = r['value'][1]
+            try:
+                reason = pod_exit_reason(ns, pod)
+            except Exception:
+                reason = ""
+            suffix = f" [{reason}]" if reason else ""
+            lines.append(f"- {ns}/{pod}: {count} restarts{suffix}")
+        return "High-restart pods:\n" + "\n".join(lines)
 
-    try:
+    def _cpu():
         cpu = prom.node_cpu_usage()
-        if cpu:
-            lines = [f"- {ip_map.get(r['metric'].get('instance'), r['metric'].get('instance'))}: {float(r['value'][1]):.1f}%" for r in cpu]
-            context_parts.append("Node CPU usage:\n" + "\n".join(lines))
-    except Exception:
-        pass
+        if not cpu:
+            return None
+        lines = [f"- {ip_map.get(r['metric'].get('instance'), r['metric'].get('instance'))}: {float(r['value'][1]):.1f}%" for r in cpu]
+        return "Node CPU usage:\n" + "\n".join(lines)
 
-    try:
+    def _mem():
         mem = prom.node_memory_usage()
-        if mem:
-            lines = [f"- {ip_map.get(r['metric'].get('instance'), r['metric'].get('instance'))}: {float(r['value'][1]):.1f}%" for r in mem]
-            context_parts.append("Node memory usage:\n" + "\n".join(lines))
-    except Exception:
-        pass
+        if not mem:
+            return None
+        lines = [f"- {ip_map.get(r['metric'].get('instance'), r['metric'].get('instance'))}: {float(r['value'][1]):.1f}%" for r in mem]
+        return "Node memory usage:\n" + "\n".join(lines)
 
-    try:
-        ns_pods = running_pods_by_namespace()
-        if ns_pods:
-            context_parts.append(format_pods_context(ns_pods))
-    except Exception:
-        pass
-
-    try:
-        pvc_list = pvcs()
-        context_parts.append(format_pvcs_context(pvc_list))
-    except Exception:
-        pass
-
-    try:
-        prob = problem_pods()
-        context_parts.append(format_problem_pods_context(prob))
-    except Exception:
-        pass
-
-    try:
-        deps = deployment_readiness()
-        context_parts.append(format_deployment_readiness_context(deps))
-    except Exception:
-        pass
-
-    try:
+    def _disk():
         disk = prom.node_disk_usage()
-        if disk:
-            lines = [f"- {ip_map.get(r['metric'].get('instance'), r['metric'].get('instance'))}: {float(r['value'][1]):.1f}%" for r in disk]
-            context_parts.append("Node disk usage (/):\n" + "\n".join(lines))
-    except Exception:
-        pass
+        if not disk:
+            return None
+        lines = [f"- {ip_map.get(r['metric'].get('instance'), r['metric'].get('instance'))}: {float(r['value'][1]):.1f}%" for r in disk]
+        return "Node disk usage (/):\n" + "\n".join(lines)
 
-    try:
-        flux = flux_sync_status()
-        context_parts.append(format_flux_context(flux))
-    except Exception:
-        pass
+    def _pods():
+        ns_pods = running_pods_by_namespace()
+        return format_pods_context(ns_pods) if ns_pods else None
+
+    def _pvcs():
+        return format_pvcs_context(pvcs())
+
+    def _problem_pods():
+        return format_problem_pods_context(problem_pods())
+
+    def _deployments():
+        return format_deployment_readiness_context(deployment_readiness())
+
+    def _flux():
+        return format_flux_context(flux_sync_status())
+
+    tasks = [_nodes, _alerts, _restarts, _cpu, _mem, _disk, _pods, _pvcs, _problem_pods, _deployments, _flux]
+
+    with ThreadPoolExecutor(max_workers=len(tasks)) as executor:
+        futures = [executor.submit(t) for t in tasks]
+
+    context_parts = []
+    for f in futures:
+        try:
+            result = f.result()
+            if result:
+                context_parts.append(result)
+        except Exception:
+            pass
 
     context = "\n\n".join(context_parts)
     prompt = f"""You are an SRE assistant for a homelab Kubernetes cluster running on kubeadm.
