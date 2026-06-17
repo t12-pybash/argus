@@ -1,6 +1,7 @@
 import re
 import subprocess
 from collections import defaultdict
+from concurrent.futures import ThreadPoolExecutor
 
 
 def _run(args: list[str]) -> str:
@@ -83,6 +84,30 @@ def format_problem_pods_context(pods: list[dict]) -> str:
     return "Problem pods (non-Running/Succeeded):\n" + "\n".join(lines)
 
 
+def running_and_problem_pods() -> tuple[dict[str, list[str]], list[dict]]:
+    """Single kubectl call returning (running_by_namespace, problem_pods)."""
+    output = _run([
+        "kubectl", "get", "pods", "-A", "--no-headers",
+        "-o", "custom-columns=NS:.metadata.namespace,NAME:.metadata.name,PHASE:.status.phase,REASON:.status.reason"
+    ])
+    running: dict[str, list[str]] = defaultdict(list)
+    problems = []
+    for line in output.splitlines():
+        parts = line.split()
+        if len(parts) < 3:
+            continue
+        ns, pod, phase = parts[0], parts[1], parts[2]
+        reason = parts[3] if len(parts) > 3 else ""
+        if phase == "Running":
+            app = re.sub(r'-[a-f0-9]{8,10}-[a-z0-9]{5}$', '', pod)
+            app = re.sub(r'-[a-z0-9]{5}$', '', app)
+            if app not in running[ns]:
+                running[ns].append(app)
+        elif phase != "Succeeded":
+            problems.append({"namespace": ns, "name": pod, "phase": phase, "reason": reason})
+    return dict(running), problems
+
+
 def deployment_readiness() -> list[dict]:
     """Returns deployments where ready replicas != desired."""
     output = _run([
@@ -110,22 +135,25 @@ def format_deployment_readiness_context(deps: list[dict]) -> str:
 
 def flux_sync_status() -> list[dict]:
     """Returns Flux Kustomizations and HelmReleases that are not Ready."""
-    issues = []
-    for kind, group in [("kustomization", "kustomize.toolkit.fluxcd.io"),
-                        ("helmrelease", "helm.toolkit.fluxcd.io")]:
+    def _fetch(kind: str) -> list[dict]:
         output = _run([
             "kubectl", "get", kind, "-A", "--no-headers",
-            "-o", f"custom-columns=NS:.metadata.namespace,NAME:.metadata.name,READY:.status.conditions[0].status,MSG:.status.conditions[0].message"
+            "-o", "custom-columns=NS:.metadata.namespace,NAME:.metadata.name,READY:.status.conditions[0].status,MSG:.status.conditions[0].message"
         ])
+        result = []
         for line in output.splitlines():
             parts = line.split(None, 3)
             if len(parts) < 3:
                 continue
-            ready = parts[2]
-            if ready.lower() != "true":
-                issues.append({"kind": kind, "namespace": parts[0], "name": parts[1],
+            if parts[2].lower() != "true":
+                result.append({"kind": kind, "namespace": parts[0], "name": parts[1],
                                "message": parts[3][:80] if len(parts) > 3 else ""})
-    return issues
+        return result
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        k = executor.submit(_fetch, "kustomization")
+        h = executor.submit(_fetch, "helmrelease")
+    return k.result() + h.result()
 
 
 def format_flux_context(issues: list[dict]) -> str:
