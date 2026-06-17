@@ -1,4 +1,5 @@
 import json
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -45,10 +46,16 @@ def _index(cfg: dict, vault_path: Path, path: Path):
 
 
 def _cluster_snapshot(cfg: dict) -> str:
+    prom = PrometheusClient(cfg["prometheus_url"])
+    am = AlertmanagerClient(cfg["alertmanager_url"])
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        f_nodes = executor.submit(prom.nodes_up)
+        f_alerts = executor.submit(am.alerts)
+
     lines = []
     try:
-        prom = PrometheusClient(cfg["prometheus_url"])
-        nodes = prom.nodes_up()
+        nodes = f_nodes.result()
         lines.append("### Node Status")
         for n in nodes:
             state = "UP" if n["value"][1] == "1" else "DOWN"
@@ -57,8 +64,7 @@ def _cluster_snapshot(cfg: dict) -> str:
         lines.append("### Node Status\n- (unavailable)")
 
     try:
-        am = AlertmanagerClient(cfg["alertmanager_url"])
-        alerts = [a for a in am.alerts() if a.get("labels", {}).get("alertname") != "Watchdog"]
+        alerts = [a for a in f_alerts.result() if a.get("labels", {}).get("alertname") != "Watchdog"]
         lines.append("\n### Firing Alerts")
         if alerts:
             for a in alerts:

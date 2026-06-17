@@ -1,3 +1,4 @@
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 from pathlib import Path
 
@@ -47,9 +48,13 @@ def diagnose(pod_ref: str, save: bool = False):
     console.print(f"\n[bold cyan]Diagnosing[/bold cyan] {namespace}/{pod}\n")
 
     with console.status("[cyan]Gathering pod data..."):
-        describe = pod_describe(namespace, pod)
-        logs = pod_logs_previous(namespace, pod, tail=50)
-        events = pod_events(namespace, pod)
+        with ThreadPoolExecutor(max_workers=3) as executor:
+            f_describe = executor.submit(pod_describe, namespace, pod)
+            f_logs = executor.submit(pod_logs_previous, namespace, pod, 50)
+            f_events = executor.submit(pod_events, namespace, pod)
+        describe = f_describe.result()
+        logs = f_logs.result()
+        events = f_events.result()
 
     if not describe:
         console.print(f"[red]Pod {namespace}/{pod} not found.[/red]")

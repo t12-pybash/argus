@@ -1,4 +1,5 @@
 import typer
+from concurrent.futures import ThreadPoolExecutor
 from rich.console import Console
 from rich.table import Table
 from rich import box
@@ -14,6 +15,11 @@ def status():
 
     console.rule("[bold blue]Homelab Status")
 
+    with ThreadPoolExecutor(max_workers=3) as executor:
+        f_nodes = executor.submit(prom.nodes_up)
+        f_alerts = executor.submit(prom.firing_alerts)
+        f_restarts = executor.submit(prom.pod_restarts)
+
     # Nodes
     table = Table(title="Nodes", box=box.SIMPLE_HEAVY)
     table.add_column("Instance", style="cyan")
@@ -21,8 +27,7 @@ def status():
     table.add_column("Status", justify="center")
 
     try:
-        nodes = prom.nodes_up()
-        for n in nodes:
+        for n in f_nodes.result():
             up = n["value"][1] == "1"
             status_str = "[green]UP[/green]" if up else "[red]DOWN[/red]"
             table.add_row(n["metric"].get("instance", "?"), n["metric"].get("job", "?"), status_str)
@@ -32,7 +37,7 @@ def status():
 
     # Alerts
     try:
-        alerts = prom.firing_alerts()
+        alerts = f_alerts.result()
         if alerts:
             console.print(f"[red bold]⚠ {len(alerts)} firing alert(s)[/red bold]")
             for a in alerts:
@@ -44,7 +49,7 @@ def status():
 
     # High restart pods
     try:
-        restarts = prom.pod_restarts()
+        restarts = f_restarts.result()
         if restarts:
             console.print(f"[yellow]⚠ {len(restarts)} pod(s) with >5 restarts[/yellow]")
             for r in restarts:
