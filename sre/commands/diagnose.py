@@ -87,12 +87,19 @@ Pod: {namespace}/{pod}
 --- Recent events ---
 {events or "(none)"}
 
-Based on the above:
-1. State the most likely root cause in one sentence.
-2. List the specific fix steps (be concrete — include exact commands where relevant).
-3. List any preventative measures.
+Diagnose this specific pod using only the evidence above. Do not give generic Kubernetes advice.
 
-Be direct and practical. No generic advice."""
+Relevant Kubernetes facts to apply when interpreting the evidence:
+- DNSConfigForming / "Nameserver limits were exceeded": The node has TOO MANY nameservers in /etc/resolv.conf. Kubernetes caps the total at 3. The fix is to REMOVE excess nameservers from /etc/resolv.conf on the affected node so only 3 remain. Do NOT add nameservers — that makes it worse. Steps: (1) find the node with `kubectl get pod <pod> -n <ns> -o jsonpath='{.spec.nodeName}'`, (2) SSH to it, (3) edit /etc/resolv.conf to leave only 3 nameserver lines.
+- OOMKilled: container hit its memory limit. Fix: raise resources.limits.memory or reduce memory usage.
+- CrashLoopBackOff with exit code 1: application error — check logs for the actual error message.
+- ImagePullBackOff: image not found or registry unreachable. Fix: verify image name/tag and registry credentials.
+
+1. Root cause: quote the specific log line or event that tells you what is wrong.
+2. Fix steps: exact shell commands to resolve the specific issue shown. Name the exact file, node, or service.
+3. Prevention: one or two specific measures relevant to this failure mode only.
+
+If the evidence is insufficient to determine the root cause, say so — do not speculate."""
 
     cfg = cfg_module.load()
     ollama = OllamaClient(cfg["ollama_url"], cfg["ollama_model"], cfg.get("ollama_api_key", ""))

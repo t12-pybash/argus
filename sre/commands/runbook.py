@@ -73,7 +73,9 @@ def runbook(query: str, ask: bool = False, generate: bool = False):
         ))
 
     llm = OllamaClient(cfg["ollama_url"], cfg["ollama_model"], cfg.get("ollama_api_key", ""))
-    context = "\n\n---\n\n".join(chunks_for_llm)
+    ask_chunks = [f"[{h['payload']['file']}]\n{h['payload']['text']}"
+                  for h in hits if h["score"] >= 0.62]
+    context = "\n\n---\n\n".join(ask_chunks or chunks_for_llm)
 
     if ask:
         prompt = f"""You are an SRE assistant. The user searched their runbook vault for: "{query}"
@@ -82,7 +84,7 @@ Here are the most relevant vault notes:
 
 {context}
 
-Summarise the relevant steps or information concisely. Focus on actionable content."""
+Give a concise answer with the root cause and exact fix steps. Be direct and practical."""
         with console.status("[cyan]Synthesising answer..."):
             response = llm.ask(prompt)
         console.print("\n")
