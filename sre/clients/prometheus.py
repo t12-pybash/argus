@@ -4,9 +4,10 @@ import httpx
 class PrometheusClient:
     def __init__(self, url: str):
         self.url = url.rstrip("/")
+        self._client = httpx.Client(verify=False, timeout=10)
 
     def query(self, promql: str) -> list:
-        r = httpx.get(f"{self.url}/api/v1/query", params={"query": promql}, verify=False, timeout=10)
+        r = self._client.get(f"{self.url}/api/v1/query", params={"query": promql})
         r.raise_for_status()
         return r.json()["data"]["result"]
 
