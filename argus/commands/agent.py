@@ -70,7 +70,7 @@ def _slack_payload(title: str, alertname: str, severity: str, pod: str, summary:
             {
                 "type": "context",
                 "elements": [
-                    {"type": "mrkdwn", "text": "Run `sre agent approve` to execute · `sre agent reject` to skip"}
+                    {"type": "mrkdwn", "text": "Run `argus agent approve` to execute · `argus agent reject` to skip"}
                 ],
             },
         ]
@@ -282,8 +282,8 @@ Be direct and specific. Commands only, no background theory."""
     else:
         approval_timeout = int(cfg.get("agent_approval_timeout", "300"))
         console.print(
-            f"\nRun [cyan]sre agent approve[/cyan] to restart the pod "
-            f"or [red]sre agent reject[/red] to skip. "
+            f"\nRun [cyan]argus agent approve[/cyan] to restart the pod "
+            f"or [red]argus agent reject[/red] to skip. "
             f"(Timeout: {approval_timeout}s)"
         )
         _wait_for_approval(cfg, pending, timeout=approval_timeout)
@@ -327,7 +327,7 @@ def start(auto: bool = False, interval: int = 30, namespaces: str = ""):
     def _handle_signal(sig, frame):
         global _shutdown
         _shutdown = True
-        console.print("\n[yellow]Shutting down sre agent...[/yellow]")
+        console.print("\n[yellow]Shutting down argus agent...[/yellow]")
 
     signal.signal(signal.SIGINT, _handle_signal)
     signal.signal(signal.SIGTERM, _handle_signal)
@@ -338,7 +338,7 @@ def start(auto: bool = False, interval: int = 30, namespaces: str = ""):
     cfg = cfg_module.load()
     watch_namespaces = {n.strip() for n in namespaces.split(",") if n.strip()}
 
-    console.print(f"[bold green]sre agent started[/bold green] (pid={os.getpid()})")
+    console.print(f"[bold green]argus agent started[/bold green] (pid={os.getpid()})")
     console.print(
         f"[dim]Poll: {interval}s | Auto: {auto} | "
         f"Namespaces: {', '.join(watch_namespaces) if watch_namespaces else 'all'}[/dim]"
@@ -389,7 +389,7 @@ def start(auto: bool = False, interval: int = 30, namespaces: str = ""):
                 time.sleep(1)
     finally:
         PID_FILE.unlink(missing_ok=True)
-        console.print("\n[green]sre agent stopped.[/green]")
+        console.print("\n[green]argus agent stopped.[/green]")
 
 
 def approve():
@@ -418,9 +418,9 @@ def reject():
 def status():
     if PID_FILE.exists():
         pid = PID_FILE.read_text().strip()
-        console.print(f"[bold green]sre agent running[/bold green] (pid={pid})")
+        console.print(f"[bold green]argus agent running[/bold green] (pid={pid})")
     else:
-        console.print("[dim]sre agent not running[/dim]")
+        console.print("[dim]argus agent not running[/dim]")
 
     if PENDING_FILE.exists():
         pending = json.loads(PENDING_FILE.read_text())
@@ -428,6 +428,6 @@ def status():
         console.print(f"  Alert:  {pending['alertname']} [{pending['severity']}]")
         console.print(f"  Pod:    {pending.get('namespace', '?')}/{pending.get('pod', '?')}")
         console.print(f"  At:     {pending['timestamp']}")
-        console.print("\n  Run [cyan]sre agent approve[/cyan] or [red]sre agent reject[/red]")
+        console.print("\n  Run [cyan]argus agent approve[/cyan] or [red]argus agent reject[/red]")
     else:
         console.print("[dim]No pending action[/dim]")
