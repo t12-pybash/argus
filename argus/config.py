@@ -14,6 +14,10 @@ DEFAULTS = {
     "embed_ollama_url": "http://localhost:11434",
     "embed_model": "nomic-embed-text",
     "redpanda_url": "redpanda.messaging.svc.cluster.local:9092",
+    "agent_webhook_url": "",
+    "agent_webhook_type": "",
+    "agent_poll_interval": "30",
+    "agent_approval_timeout": "300",
 }
 
 def load() -> dict:

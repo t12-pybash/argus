@@ -3,9 +3,11 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "sre"
+name = "argus-sre"
 version = "0.1.0"
 requires-python = ">=3.11"
+description = "Autonomous SRE intelligence for sovereign infrastructure"
+license = {text = "Apache-2.0"}
 dependencies = [
     "typer>=0.12",
     "rich>=13",
@@ -18,8 +20,25 @@ dependencies = [
 ]
 
 [project.scripts]
-sre = "sre.main:app"
-sre-mcp = "sre.mcp_server:mcp.run"
+argus = "argus.main:app"
+argus-mcp = "argus.mcp_server:mcp.run"
 
 [tool.hatch.build.targets.wheel]
-packages = ["sre"]
+packages = ["argus"]
+
+[project.optional-dependencies]
+dev = [
+    "commitizen>=3.0",
+    "ruff>=0.4",
+]
+
+[tool.commitizen]
+name = "cz_conventional_commits"
+version = "0.1.0"
+version_files = ["pyproject.toml:version"]
+tag_format = "v$version"
+update_changelog_on_bump = true
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"

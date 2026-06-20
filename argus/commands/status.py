@@ -1,10 +1,9 @@
-import typer
 from concurrent.futures import ThreadPoolExecutor
 from rich.console import Console
 from rich.table import Table
 from rich import box
-from sre.clients.prometheus import PrometheusClient
-from sre import config as cfg_module
+from argus.clients.prometheus import PrometheusClient
+from argus import config as cfg_module
 
 console = Console()
 

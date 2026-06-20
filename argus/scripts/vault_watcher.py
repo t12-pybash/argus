@@ -17,7 +17,7 @@ from confluent_kafka import Producer
 from watchdog.events import FileSystemEventHandler
 from watchdog.observers import Observer
 
-from sre.config import load
+from argus.config import load
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 log = logging.getLogger(__name__)

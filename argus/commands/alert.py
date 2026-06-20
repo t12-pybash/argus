@@ -1,8 +1,8 @@
 from rich.console import Console
 from rich.table import Table
 from rich import box
-from sre.clients.alertmanager import AlertmanagerClient
-from sre import config as cfg_module
+from argus.clients.alertmanager import AlertmanagerClient
+from argus import config as cfg_module
 
 console = Console()
 

@@ -11,13 +11,11 @@ import json
 import logging
 import os
 import signal
-import sys
-from pathlib import Path
 
 import httpx
 from confluent_kafka import Consumer, KafkaError
 
-from sre.config import load
+from argus.config import load
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 log = logging.getLogger(__name__)

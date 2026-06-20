@@ -6,10 +6,10 @@ from pathlib import Path
 from rich.console import Console
 from rich.table import Table
 
-from sre.clients.alertmanager import AlertmanagerClient
-from sre.clients.prometheus import PrometheusClient
-from sre.clients.qdrant import upsert_file
-from sre import config as cfg_module
+from argus.clients.alertmanager import AlertmanagerClient
+from argus.clients.prometheus import PrometheusClient
+from argus.clients.qdrant import upsert_file
+from argus import config as cfg_module
 
 console = Console()
 
