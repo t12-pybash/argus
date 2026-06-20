@@ -8,7 +8,7 @@ from pathlib import Path
 
 import httpx
 
-from sre import config as cfg_module
+from argus import config as cfg_module
 
 COLLECTION = "vault"
 CHUNK_SIZE = 400

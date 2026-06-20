@@ -4,9 +4,9 @@ from pathlib import Path
 import httpx
 from mcp.server.fastmcp import FastMCP
 
-from sre.clients.alertmanager import AlertmanagerClient
-from sre.clients.prometheus import PrometheusClient
-from sre import config as cfg_module
+from argus.clients.alertmanager import AlertmanagerClient
+from argus.clients.prometheus import PrometheusClient
+from argus import config as cfg_module
 
 mcp = FastMCP("homelab-sre")
 _cfg = cfg_module.load()

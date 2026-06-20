@@ -5,9 +5,9 @@ from rich.console import Console
 from rich.markdown import Markdown
 from rich.panel import Panel
 from rich import box
-from sre.clients.ollama import OllamaClient
-from sre.clients.qdrant import upsert_file
-from sre import config as cfg_module
+from argus.clients.ollama import OllamaClient
+from argus.clients.qdrant import upsert_file
+from argus import config as cfg_module
 
 console = Console()
 

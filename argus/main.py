@@ -1,14 +1,17 @@
 import typer
-from sre.commands.status import status as _status
-from sre.commands.alert import alert as _alert
-from sre.commands.ask import ask as _ask
-from sre.commands.runbook import runbook as _runbook
-from sre.commands.diagnose import diagnose as _diagnose
-from sre.commands import incident as _inc
+from argus.commands.status import status as _status
+from argus.commands.alert import alert as _alert
+from argus.commands.ask import ask as _ask
+from argus.commands.runbook import runbook as _runbook
+from argus.commands.diagnose import diagnose as _diagnose
+from argus.commands import incident as _inc
+from argus.commands import agent as _agent
 
-app = typer.Typer(help="Homelab SRE CLI", no_args_is_help=True)
+app = typer.Typer(help="Argus — autonomous SRE intelligence for sovereign infrastructure", no_args_is_help=True)
 incident_app = typer.Typer(help="Incident management", no_args_is_help=True)
+agent_app = typer.Typer(help="Autonomous SRE agent", no_args_is_help=True)
 app.add_typer(incident_app, name="incident")
+app.add_typer(agent_app, name="agent")
 
 
 @app.command()
@@ -46,6 +49,40 @@ def diagnose(
 ):
     """Diagnose a crashing pod: fetches logs, events, describe and gets LLM root cause analysis."""
     _diagnose(pod, save=save)
+
+
+@agent_app.command("start")
+def agent_start(
+    auto: bool = typer.Option(False, "--auto", "-a", help="Auto-execute safe remediation without approval"),
+    interval: int = typer.Option(30, "--interval", "-i", help="Poll interval in seconds"),
+    namespaces: str = typer.Option("", "--namespaces", "-n", help="Comma-separated namespaces to watch (default: all)"),
+):
+    """Start the autonomous SRE agent daemon."""
+    _agent.start(auto=auto, interval=interval, namespaces=namespaces)
+
+
+@agent_app.command("approve")
+def agent_approve():
+    """Approve the pending remediation action."""
+    _agent.approve()
+
+
+@agent_app.command("reject")
+def agent_reject():
+    """Reject the pending remediation action."""
+    _agent.reject()
+
+
+@agent_app.command("skip")
+def agent_skip():
+    """Skip the pending remediation action (alias for reject)."""
+    _agent.reject()
+
+
+@agent_app.command("status")
+def agent_status():
+    """Show agent status and any pending action."""
+    _agent.status()
 
 
 @incident_app.command("start")

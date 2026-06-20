@@ -11,12 +11,11 @@ import json
 import logging
 import os
 import subprocess
-import sys
 from pathlib import Path
 
 from confluent_kafka import Producer
 
-from sre.config import load
+from argus.config import load
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 log = logging.getLogger(__name__)

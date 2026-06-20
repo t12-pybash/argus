@@ -1,16 +1,16 @@
 from concurrent.futures import ThreadPoolExecutor
 from rich.console import Console
 from rich.markdown import Markdown
-from sre.clients.prometheus import PrometheusClient
-from sre.clients.ollama import OllamaClient
-from sre.clients.kubernetes import (
+from argus.clients.prometheus import PrometheusClient
+from argus.clients.ollama import OllamaClient
+from argus.clients.kubernetes import (
     running_and_problem_pods, format_pods_context, format_problem_pods_context,
     pvcs, format_pvcs_context,
     deployment_readiness, format_deployment_readiness_context,
     flux_sync_status, format_flux_context,
     pod_exit_reason,
 )
-from sre import config as cfg_module
+from argus import config as cfg_module
 
 console = Console()
 
