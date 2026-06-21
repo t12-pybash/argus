@@ -45,8 +45,8 @@ def _save_seen(seen: set):
 
 
 def _slack_payload(title: str, alertname: str, severity: str, pod: str, summary: str, plan: str) -> dict:
-    # Strip markdown code fences — Slack mrkdwn uses backticks differently
     clean_plan = plan.replace("```bash", "```").replace("```shell", "```")
+    clean_plan = clean_plan.replace("**", "")
     return {
         "blocks": [
             {
