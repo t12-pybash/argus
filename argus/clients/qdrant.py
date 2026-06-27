@@ -5,6 +5,29 @@ COLLECTION = "vault"
 CHUNK_SIZE = 500
 
 
+def embed_text(text: str, ollama_url: str, model: str) -> list[float]:
+    resp = httpx.post(
+        f"{ollama_url}/api/embed",
+        json={"model": model, "input": text},
+        verify=False,
+        timeout=30,
+    )
+    resp.raise_for_status()
+    return resp.json()["embeddings"][0]
+
+
+def search_vault(query: str, qdrant_url: str, ollama_url: str, model: str, limit: int = 3) -> list[dict]:
+    vec = embed_text(query, ollama_url, model)
+    resp = httpx.post(
+        f"{qdrant_url}/collections/{COLLECTION}/points/search",
+        json={"vector": vec, "limit": limit, "with_payload": True},
+        verify=False,
+        timeout=15,
+    )
+    resp.raise_for_status()
+    return [h for h in resp.json().get("result", []) if h["score"] >= 0.55]
+
+
 def chunk_text(text: str) -> list[str]:
     paragraphs = [p.strip() for p in text.split("\n\n") if p.strip()]
     chunks, current = [], ""

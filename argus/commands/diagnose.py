@@ -10,7 +10,7 @@ from rich import box
 
 from argus.clients.kubernetes import pod_describe, pod_logs_previous, pod_events
 from argus.clients.ollama import OllamaClient
-from argus.clients.qdrant import upsert_file
+from argus.clients.qdrant import upsert_file, search_vault
 from argus import config as cfg_module
 
 console = Console()
@@ -18,6 +18,15 @@ console = Console()
 
 def _strip_thinking(text: str) -> str:
     return re.sub(r"<think>.*?</think>", "", text, flags=re.DOTALL).strip()
+
+
+def _failure_signal(events: str, logs: str) -> str:
+    """Extract the most prominent failure keywords to use as a Qdrant search query."""
+    keywords = ["OOMKilled", "CrashLoopBackOff", "ImagePullBackOff", "BackOff",
+                "Error", "Failed", "Evicted", "Unhealthy", "OOM"]
+    found = [kw for kw in keywords if kw.lower() in events.lower() or kw.lower() in logs.lower()]
+    log_head = " ".join(logs.strip().splitlines()[:3]) if logs else ""
+    return f"{' '.join(found)} {log_head}"[:300].strip()
 
 
 def _truncate(text: str, max_lines: int) -> str:
@@ -82,7 +91,35 @@ def diagnose(pod_ref: str, save: bool = False):
         expand=False,
     ))
 
+    cfg = cfg_module.load()
+
+    # Search vault for relevant runbooks before calling the LLM
+    vault_context = ""
+    signal = _failure_signal(events, logs)
+    if signal:
+        try:
+            with console.status("[cyan]Searching vault for relevant runbooks..."):
+                hits = search_vault(
+                    signal,
+                    cfg["qdrant_url"],
+                    cfg.get("embed_ollama_url", cfg["ollama_url"]),
+                    cfg.get("embed_model", "nomic-embed-text"),
+                )
+            if hits:
+                vault_context = "\n\n---\n\n".join(
+                    f"[{h['payload']['file']}]\n{h['payload']['text']}" for h in hits
+                )
+                console.print(f"[dim]Found {len(hits)} relevant runbook(s) in vault[/dim]")
+        except Exception:
+            pass
+
     describe_trimmed = _truncate(describe, 80)
+    runbook_section = f"""--- Relevant runbooks from our vault ---
+{vault_context}
+
+Use these runbooks as your primary source for fix steps. Prefer documented procedures over generic advice.
+""" if vault_context else ""
+
     prompt = f"""You are a Kubernetes SRE diagnosing a pod that is crashing or restarting.
 
 Pod: {namespace}/{pod}
@@ -96,7 +133,7 @@ Pod: {namespace}/{pod}
 --- Recent events ---
 {events or "(none)"}
 
-Diagnose this specific pod using only the evidence above. Do not give generic Kubernetes advice.
+{runbook_section}Diagnose this specific pod using only the evidence above. Do not give generic Kubernetes advice.
 
 Relevant Kubernetes facts to apply when interpreting the evidence:
 - DNSConfigForming / "Nameserver limits were exceeded": The node has TOO MANY nameservers in /etc/resolv.conf. Kubernetes caps the total at 3. The fix is to REMOVE excess nameservers from /etc/resolv.conf on the affected node so only 3 remain. Do NOT add nameservers — that makes it worse. Steps: (1) find the node with `kubectl get pod <pod> -n <ns> -o jsonpath='{{.spec.nodeName}}'`, (2) SSH to it, (3) edit /etc/resolv.conf to leave only 3 nameserver lines.
@@ -110,7 +147,6 @@ Relevant Kubernetes facts to apply when interpreting the evidence:
 
 If the evidence is insufficient to determine the root cause, say so — do not speculate."""
 
-    cfg = cfg_module.load()
     model = cfg.get("diagnose_model", "deepseek-r1:7b")
     ollama = OllamaClient(cfg["ollama_url"], model, cfg.get("ollama_api_key", ""))
 
