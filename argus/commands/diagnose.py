@@ -10,8 +10,13 @@ from rich import box
 
 from argus.clients.kubernetes import pod_describe, pod_logs_previous, pod_events
 from argus.clients.ollama import OllamaClient
-from argus.clients.qdrant import upsert_file, search_vault
 from argus import config as cfg_module
+
+try:
+    from argus.clients.qdrant import upsert_file, search_vault
+    _qdrant = True
+except ImportError:
+    _qdrant = False
 
 console = Console()
 
@@ -96,7 +101,7 @@ def diagnose(pod_ref: str, save: bool = False):
     # Search vault for relevant runbooks before calling the LLM
     vault_context = ""
     signal = _failure_signal(events, logs)
-    if signal:
+    if signal and _qdrant:
         try:
             with console.status("[cyan]Searching vault for relevant runbooks..."):
                 hits = search_vault(
@@ -162,6 +167,9 @@ If the evidence is insufficient to determine the root cause, say so — do not s
         vault_path = Path(cfg["vault_path"])
         path = _save_runbook(vault_path, namespace, pod, analysis)
         console.print(f"\n[green]✓ Saved:[/green] {path}")
+        if not _qdrant:
+            console.print("[yellow]Install argus-sre[rag] to index into Qdrant.[/yellow]")
+            return
         try:
             rel_path = str(path.relative_to(vault_path))
             with console.status("[cyan]Indexing into Qdrant..."):
