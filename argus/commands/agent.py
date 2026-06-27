@@ -21,11 +21,11 @@ from argus import config as cfg_module
 
 console = Console()
 
-SEEN_FILE = Path.home() / ".config" / "sre" / "agent_seen.json"
-PENDING_FILE = Path.home() / ".config" / "sre" / "agent_pending.json"
-PID_FILE = Path.home() / ".config" / "sre" / "agent.pid"
-APPROVE_FILE = Path.home() / ".config" / "sre" / "agent_approve"
-REJECT_FILE = Path.home() / ".config" / "sre" / "agent_reject"
+SEEN_FILE = Path.home() / ".config" / "argus" / "agent_seen.json"
+PENDING_FILE = Path.home() / ".config" / "argus" / "agent_pending.json"
+PID_FILE = Path.home() / ".config" / "argus" / "agent.pid"
+APPROVE_FILE = Path.home() / ".config" / "argus" / "agent_approve"
+REJECT_FILE = Path.home() / ".config" / "argus" / "agent_reject"
 
 _shutdown = False
 
@@ -84,7 +84,7 @@ def _notify(cfg: dict, title: str, body: str, alert_meta: dict | None = None):
     if webhook_url:
         try:
             if "discord.com" in webhook_url:
-                payload = {"content": f"**{title}**\n{body}", "username": "sre-agent"}
+                payload = {"content": f"**{title}**\n{body}", "username": "argus-agent"}
             elif "ntfy.sh" in webhook_url or cfg.get("agent_webhook_type") == "ntfy":
                 httpx.post(webhook_url, content=body, headers={"Title": title}, timeout=10)
                 payload = None
@@ -98,7 +98,7 @@ def _notify(cfg: dict, title: str, body: str, alert_meta: dict | None = None):
                     plan=alert_meta["plan"],
                 )
             else:
-                payload = {"text": f"*{title}*\n{body}", "username": "sre-agent", "icon_emoji": ":robot_face:"}
+                payload = {"text": f"*{title}*\n{body}", "username": "argus-agent", "icon_emoji": ":robot_face:"}
             if payload is not None:
                 httpx.post(webhook_url, json=payload, timeout=10)
         except Exception as e:

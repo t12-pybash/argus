@@ -13,7 +13,7 @@ from argus import config as cfg_module
 
 console = Console()
 
-ACTIVE_FILE = Path.home() / ".config" / "sre" / "active_incident.json"
+ACTIVE_FILE = Path.home() / ".config" / "argus" / "active_incident.json"
 
 
 def _incident_dir(vault_path: Path) -> Path:

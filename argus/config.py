@@ -22,12 +22,12 @@ DEFAULTS = {
 
 def load() -> dict:
     cfg = dict(DEFAULTS)
-    config_file = Path(os.environ.get("SRE_CONFIG_FILE", str(Path.home() / ".config" / "sre" / "config.toml")))
+    config_file = Path(os.environ.get("ARGUS_CONFIG_FILE", str(Path.home() / ".config" / "argus" / "config.toml")))
     if config_file.exists():
         with open(config_file, "rb") as f:
             cfg.update(tomllib.load(f))
     for key in DEFAULTS:
-        env_key = f"SRE_{key.upper()}"
+        env_key = f"ARGUS_{key.upper()}"
         if val := os.environ.get(env_key):
             cfg[key] = val
     return cfg
