@@ -217,6 +217,64 @@ def inference_services() -> list[dict]:
     return result
 
 
+def ollama_models(namespace: str, isvc_name: str) -> list[dict]:
+    """List Ollama models via 'ollama list' exec into the predictor pod."""
+    pod = _run([
+        "kubectl", "get", "pod", "-n", namespace,
+        "-l", f"serving.kserve.io/inferenceservice={isvc_name}",
+        "--no-headers", "-o", "custom-columns=NAME:.metadata.name"
+    ])
+    if not pod:
+        return []
+    output = _run(["kubectl", "exec", pod, "-n", namespace, "--", "ollama", "list"])
+    models = []
+    for line in output.splitlines()[1:]:  # skip header
+        parts = line.split()
+        if len(parts) >= 3:
+            models.append({"name": parts[0], "size": f"{parts[2]} {parts[3]}"})
+    return models
+
+
+def inference_service_image(namespace: str, name: str) -> str:
+    """Returns the current container image for a KServe InferenceService."""
+    return _run([
+        "kubectl", "get", "inferenceservice", name, "-n", namespace,
+        "-o", "jsonpath={.spec.predictor.containers[0].image}"
+    ])
+
+
+def patch_inference_service_image(namespace: str, name: str, image: str) -> str:
+    """Patches the container image of a KServe InferenceService."""
+    patch = json.dumps({
+        "spec": {"predictor": {"containers": [{"name": "kserve-container", "image": image}]}}
+    })
+    result = subprocess.run(
+        ["kubectl", "patch", "inferenceservice", name, "-n", namespace, "--type=merge", "-p", patch],
+        capture_output=True, text=True, timeout=15,
+    )
+    if result.returncode == 0:
+        return f"InferenceService {namespace}/{name} updated to {image}"
+    return f"Patch failed: {result.stderr.strip()}"
+
+
+def rollback_inference_service(namespace: str, name: str) -> str:
+    """Rollback a KServe InferenceService via its underlying deployment."""
+    deployment = _run([
+        "kubectl", "get", "deployment", "-n", namespace,
+        "-l", f"serving.kserve.io/inferenceservice={name}",
+        "--no-headers", "-o", "custom-columns=NAME:.metadata.name"
+    ])
+    if not deployment:
+        return f"No deployment found for InferenceService {name}"
+    result = subprocess.run(
+        ["kubectl", "rollout", "undo", f"deployment/{deployment}", "-n", namespace],
+        capture_output=True, text=True, timeout=15,
+    )
+    if result.returncode == 0:
+        return f"Rolled back InferenceService {namespace}/{name} via deployment/{deployment}"
+    return f"Rollback failed: {result.stderr.strip()}"
+
+
 # --- Remediation actions ---
 
 def get_deployment_for_pod(namespace: str, pod: str) -> str:
