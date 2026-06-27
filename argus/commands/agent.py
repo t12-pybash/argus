@@ -1,7 +1,6 @@
 import json
 import os
 import signal
-import subprocess
 import time
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
