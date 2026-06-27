@@ -6,12 +6,15 @@ from argus.commands.runbook import runbook as _runbook
 from argus.commands.diagnose import diagnose as _diagnose
 from argus.commands import incident as _inc
 from argus.commands import agent as _agent
+from argus.commands import model as _model
 
 app = typer.Typer(help="Argus — autonomous SRE intelligence for sovereign infrastructure", no_args_is_help=True)
 incident_app = typer.Typer(help="Incident management", no_args_is_help=True)
 agent_app = typer.Typer(help="Autonomous SRE agent", no_args_is_help=True)
+model_app = typer.Typer(help="Manage KServe InferenceServices", no_args_is_help=True)
 app.add_typer(incident_app, name="incident")
 app.add_typer(agent_app, name="agent")
+app.add_typer(model_app, name="model")
 
 
 @app.command()
@@ -83,6 +86,31 @@ def agent_skip():
 def agent_status():
     """Show agent status and any pending action."""
     _agent.status()
+
+
+@model_app.command("status")
+def model_status():
+    """Show InferenceService health and available models."""
+    _model.status()
+
+
+@model_app.command("rollout")
+def model_rollout(
+    image: str = typer.Argument(..., help="New container image (e.g. ollama/ollama:latest)"),
+    name: str = typer.Option("ollama", "--name", "-n", help="InferenceService name"),
+    namespace: str = typer.Option("ai-platform", "--namespace", help="Namespace"),
+):
+    """Update the container image of an InferenceService."""
+    _model.rollout(name, image, namespace)
+
+
+@model_app.command("rollback")
+def model_rollback(
+    name: str = typer.Option("ollama", "--name", "-n", help="InferenceService name"),
+    namespace: str = typer.Option("ai-platform", "--namespace", help="Namespace"),
+):
+    """Rollback an InferenceService to the previous image."""
+    _model.rollback(name, namespace)
 
 
 @incident_app.command("start")
