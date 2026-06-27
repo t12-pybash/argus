@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "argus-sre"
-version = "0.2.0"
+version = "0.2.1"
 requires-python = ">=3.11"
 description = "Autonomous SRE intelligence for sovereign infrastructure"
 license = {text = "Apache-2.0"}
@@ -31,7 +31,7 @@ dev = ["commitizen>=3.0", "ruff>=0.4"]
 
 [tool.commitizen]
 name = "cz_conventional_commits"
-version = "0.2.0"
+version = "0.2.1"
 version_files = ["pyproject.toml:version"]
 tag_format = "v$version"
 update_changelog_on_bump = true
