@@ -123,6 +123,6 @@ Be specific and include exact commands. This will be saved and used by the team.
                     rel_path,
                     response,
                 )
-            console.print("[green]✓ Indexed — searchable now via `sre runbook`.[/green]")
+            console.print("[green]✓ Indexed — searchable now via `argus runbook`.[/green]")
         except Exception as e:
             console.print(f"[yellow]⚠ Qdrant index failed ({e}). Will be picked up on next vault sync.[/yellow]")
