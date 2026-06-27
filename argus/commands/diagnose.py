@@ -65,6 +65,10 @@ def diagnose(pod_ref: str, save: bool = False):
         console.print(f"[red]Pod {namespace}/{pod} not found.[/red]")
         return
 
+    if not logs and not events:
+        console.print("[green]✓ Pod appears healthy — no previous logs and no events found. Nothing to diagnose.[/green]")
+        return
+
     console.print(Panel(
         _truncate(events, 20) or "(no events)",
         title="[yellow]Recent Events[/yellow]",
