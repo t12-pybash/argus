@@ -120,7 +120,7 @@ _Not yet resolved._
 
 def note(message: str):
     if not ACTIVE_FILE.exists():
-        console.print("[yellow]No active incident. Run `sre incident start <title>` first.[/yellow]")
+        console.print("[yellow]No active incident. Run `argus incident start <title>` first.[/yellow]")
         return
 
     state = json.loads(ACTIVE_FILE.read_text())

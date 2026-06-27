@@ -124,6 +124,6 @@ If the evidence is insufficient to determine the root cause, say so — do not s
                     rel_path,
                     path.read_text(),
                 )
-            console.print("[green]✓ Indexed — searchable now via `sre runbook`.[/green]")
+            console.print("[green]✓ Indexed — searchable now via `argus runbook`.[/green]")
         except Exception as e:
             console.print(f"[yellow]⚠ Qdrant index failed ({e}). Will be picked up on next vault sync.[/yellow]")

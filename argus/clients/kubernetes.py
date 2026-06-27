@@ -1,3 +1,4 @@
+import json
 import re
 import subprocess
 from collections import defaultdict
@@ -193,3 +194,141 @@ def pod_events(namespace: str, pod: str) -> str:
         f"--field-selector=involvedObject.name={pod}",
         "--sort-by=.lastTimestamp"
     ])
+
+
+# --- Remediation actions ---
+
+def get_deployment_for_pod(namespace: str, pod: str) -> str:
+    """Resolve deployment name from pod name via its ReplicaSet owner."""
+    rs = _run([
+        "kubectl", "get", "pod", pod, "-n", namespace, "-o",
+        "jsonpath={.metadata.ownerReferences[0].name}",
+    ])
+    if not rs:
+        return ""
+    deployment = _run([
+        "kubectl", "get", "replicaset", rs, "-n", namespace, "-o",
+        "jsonpath={.metadata.ownerReferences[0].name}",
+    ])
+    return deployment or rs
+
+
+def rollout_restart(namespace: str, deployment: str) -> str:
+    result = subprocess.run(
+        ["kubectl", "rollout", "restart", f"deployment/{deployment}", "-n", namespace],
+        capture_output=True, text=True, timeout=15,
+    )
+    if result.returncode == 0:
+        return f"Restarted deployment/{deployment} in {namespace}"
+    return f"Rollout restart failed: {result.stderr.strip()}"
+
+
+def rollout_undo(namespace: str, deployment: str) -> str:
+    result = subprocess.run(
+        ["kubectl", "rollout", "undo", f"deployment/{deployment}", "-n", namespace],
+        capture_output=True, text=True, timeout=15,
+    )
+    if result.returncode == 0:
+        return f"Rolled back deployment/{deployment} in {namespace}"
+    return f"Rollback failed: {result.stderr.strip()}"
+
+
+def force_delete_pod(namespace: str, pod: str) -> str:
+    result = subprocess.run(
+        ["kubectl", "delete", "pod", pod, "-n", namespace, "--grace-period=0", "--force"],
+        capture_output=True, text=True, timeout=15,
+    )
+    if result.returncode == 0:
+        return f"Force deleted pod {namespace}/{pod}"
+    return f"Force delete failed: {result.stderr.strip()}"
+
+
+def scale_deployment(namespace: str, deployment: str, replicas: int) -> str:
+    result = subprocess.run(
+        ["kubectl", "scale", f"deployment/{deployment}", f"--replicas={replicas}", "-n", namespace],
+        capture_output=True, text=True, timeout=15,
+    )
+    if result.returncode == 0:
+        return f"Scaled deployment/{deployment} to {replicas} replica(s) in {namespace}"
+    return f"Scale failed: {result.stderr.strip()}"
+
+
+def expand_pvc(namespace: str, pvc_name: str, new_size: str) -> str:
+    patch = json.dumps({"spec": {"resources": {"requests": {"storage": new_size}}}})
+    result = subprocess.run(
+        ["kubectl", "patch", "pvc", pvc_name, "-n", namespace, "--type=merge", "-p", patch],
+        capture_output=True, text=True, timeout=15,
+    )
+    if result.returncode == 0:
+        return f"Expanded PVC {namespace}/{pvc_name} to {new_size}"
+    return f"PVC expand failed: {result.stderr.strip()}"
+
+
+def delete_failed_jobs(namespace: str) -> str:
+    result = subprocess.run(
+        ["kubectl", "delete", "jobs", "-n", namespace, "--field-selector=status.successful=0"],
+        capture_output=True, text=True, timeout=15,
+    )
+    if result.returncode == 0:
+        return f"Deleted failed jobs in {namespace}"
+    return f"Job cleanup failed: {result.stderr.strip()}"
+
+
+def cordon_node(node: str) -> str:
+    result = subprocess.run(
+        ["kubectl", "cordon", node],
+        capture_output=True, text=True, timeout=15,
+    )
+    if result.returncode == 0:
+        return f"Cordoned node {node}"
+    return f"Cordon failed: {result.stderr.strip()}"
+
+
+def drain_node(node: str) -> str:
+    result = subprocess.run(
+        ["kubectl", "drain", node, "--ignore-daemonsets", "--delete-emptydir-data", "--timeout=120s"],
+        capture_output=True, text=True, timeout=150,
+    )
+    if result.returncode == 0:
+        return f"Drained node {node}"
+    return f"Drain failed: {result.stderr.strip()}"
+
+
+def restart_coredns() -> str:
+    result = subprocess.run(
+        ["kubectl", "rollout", "restart", "deployment/coredns", "-n", "kube-system"],
+        capture_output=True, text=True, timeout=15,
+    )
+    if result.returncode == 0:
+        return "Restarted CoreDNS"
+    return f"CoreDNS restart failed: {result.stderr.strip()}"
+
+
+def flux_reconcile(kind: str, name: str, namespace: str = "flux-system") -> str:
+    result = subprocess.run(
+        ["flux", "reconcile", kind, name, "-n", namespace],
+        capture_output=True, text=True, timeout=60,
+    )
+    if result.returncode == 0:
+        return f"Flux reconciled {kind}/{name} in {namespace}"
+    return f"Flux reconcile failed: {result.stderr.strip()}"
+
+
+def flux_suspend(kind: str, name: str, namespace: str = "flux-system") -> str:
+    result = subprocess.run(
+        ["flux", "suspend", kind, name, "-n", namespace],
+        capture_output=True, text=True, timeout=15,
+    )
+    if result.returncode == 0:
+        return f"Suspended Flux {kind}/{name} in {namespace}"
+    return f"Flux suspend failed: {result.stderr.strip()}"
+
+
+def flux_resume(kind: str, name: str, namespace: str = "flux-system") -> str:
+    result = subprocess.run(
+        ["flux", "resume", kind, name, "-n", namespace],
+        capture_output=True, text=True, timeout=15,
+    )
+    if result.returncode == 0:
+        return f"Resumed Flux {kind}/{name} in {namespace}"
+    return f"Flux resume failed: {result.stderr.strip()}"

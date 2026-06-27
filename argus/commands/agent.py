@@ -14,6 +14,7 @@ from rich.panel import Panel
 from rich import box
 
 from argus.clients.alertmanager import AlertmanagerClient
+from argus.clients import kubernetes as k8s
 from argus.clients.kubernetes import pod_describe, pod_logs_previous, pod_events
 from argus.clients.ollama import OllamaClient
 from argus import config as cfg_module
@@ -44,7 +45,7 @@ def _save_seen(seen: set):
     SEEN_FILE.write_text(json.dumps(list(seen)))
 
 
-def _slack_payload(title: str, alertname: str, severity: str, pod: str, summary: str, plan: str) -> dict:
+def _slack_payload(title: str, alertname: str, severity: str, pod: str, summary: str, plan: str, action: str = "") -> dict:
     clean_plan = plan.replace("```bash", "```").replace("```shell", "```")
     clean_plan = clean_plan.replace("**", "")
     return {
@@ -60,6 +61,7 @@ def _slack_payload(title: str, alertname: str, severity: str, pod: str, summary:
                     {"type": "mrkdwn", "text": f"*Severity:*\n{severity}"},
                     {"type": "mrkdwn", "text": f"*Pod:*\n{pod or 'N/A'}"},
                     {"type": "mrkdwn", "text": f"*Summary:*\n{summary}"},
+                    {"type": "mrkdwn", "text": f"*Action:*\n`{action or 'none'}`"},
                 ],
             },
             {"type": "divider"},
@@ -126,32 +128,130 @@ def _search_qdrant(vec: list[float], qdrant_url: str, limit: int = 3) -> list[di
     return resp.json().get("result", [])
 
 
-def _safe_restart(namespace: str, pod: str) -> str:
-    """Restart the deployment owning this pod via kubectl rollout restart."""
+_VALID_ACTIONS = {
+    "rollout_restart", "rollout_undo", "force_delete_pod", "scale_deployment",
+    "expand_pvc", "delete_failed_jobs", "cordon_node", "drain_node",
+    "flux_reconcile", "flux_suspend", "restart_coredns", "none",
+}
+
+_ACTION_GUIDE = """
+- rollout_restart: pod crashlooping or stuck, deployment exists
+- rollout_undo: new rollout caused the alert (OOMKilled/error spike after deploy)
+- force_delete_pod: pod stuck in Terminating or Unknown state
+- scale_deployment: resource pressure, need more replicas (set replicas field)
+- expand_pvc: PVC near capacity — set name to PVC name and size to new capacity e.g. 20Gi
+- delete_failed_jobs: failed batch jobs accumulating in namespace
+- cordon_node: node unhealthy, stop scheduling new pods onto it (set name to node name)
+- drain_node: evacuate all pods from a troubled node (set name to node name)
+- flux_reconcile: Flux sync stuck or drifted (set flux_kind to kustomization or helmrelease)
+- flux_suspend: HelmRelease looping upgrade failures (set flux_kind to helmrelease)
+- restart_coredns: DNS resolution failures cluster-wide
+- none: requires human investigation, no safe automated action
+"""
+
+
+def _pick_action(
+    ollama: OllamaClient,
+    alertname: str,
+    severity: str,
+    pod_ref: str,
+    namespace: str,
+    pod: str,
+    diagnosis: str,
+    summary: str,
+) -> dict:
+    prompt = f"""You are an SRE agent. Choose exactly ONE remediation action for this alert.
+
+Alert: {alertname} [{severity}]
+Summary: {summary}
+Pod: {pod_ref or "N/A"}
+Namespace: {namespace or "N/A"}
+
+Diagnosis:
+{diagnosis[:2000] if diagnosis else "No diagnosis available."}
+
+Action guide:{_ACTION_GUIDE}
+
+Reply with ONLY a valid JSON object, no other text:
+{{
+  "action": "<action from guide>",
+  "namespace": "{namespace or ""}",
+  "name": "<deployment, pod, node, or PVC name — empty if not applicable>",
+  "replicas": 0,
+  "size": "",
+  "flux_kind": "",
+  "safe_to_auto": false
+}}"""
+
     try:
-        rs = subprocess.run(
-            ["kubectl", "get", "pod", pod, "-n", namespace, "-o",
-             "jsonpath={.metadata.ownerReferences[0].name}"],
-            capture_output=True, text=True, timeout=10,
-        ).stdout.strip()
-        if not rs:
-            return f"Could not determine owner of {namespace}/{pod}"
+        raw = ollama.ask(prompt)
+        import re as _re
+        match = _re.search(r"\{.*\}", raw, _re.DOTALL)
+        if match:
+            parsed = json.loads(match.group())
+            if parsed.get("action") not in _VALID_ACTIONS:
+                parsed["action"] = "none"
+            return parsed
+    except Exception:
+        pass
+    return {"action": "none", "namespace": namespace, "name": "", "safe_to_auto": False}
 
-        deployment = subprocess.run(
-            ["kubectl", "get", "replicaset", rs, "-n", namespace, "-o",
-             "jsonpath={.metadata.ownerReferences[0].name}"],
-            capture_output=True, text=True, timeout=10,
-        ).stdout.strip() or rs
 
-        result = subprocess.run(
-            ["kubectl", "rollout", "restart", f"deployment/{deployment}", "-n", namespace],
-            capture_output=True, text=True, timeout=15,
-        )
-        if result.returncode == 0:
-            return f"Restarted deployment/{deployment} in {namespace}"
-        return f"Restart failed: {result.stderr.strip()}"
+def _execute_action(action_plan: dict, fallback_namespace: str, fallback_pod: str) -> str:
+    action = action_plan.get("action", "none")
+    ns = action_plan.get("namespace") or fallback_namespace
+    name = action_plan.get("name", "")
+
+    try:
+        if action == "rollout_restart":
+            if not name and fallback_pod:
+                name = k8s.get_deployment_for_pod(ns, fallback_pod)
+            return k8s.rollout_restart(ns, name) if name else f"No deployment resolved for {ns}/{fallback_pod}"
+
+        if action == "rollout_undo":
+            if not name and fallback_pod:
+                name = k8s.get_deployment_for_pod(ns, fallback_pod)
+            return k8s.rollout_undo(ns, name) if name else f"No deployment resolved for rollback in {ns}"
+
+        if action == "force_delete_pod":
+            target = name or fallback_pod
+            return k8s.force_delete_pod(ns, target) if target else "No pod identified for force delete"
+
+        if action == "scale_deployment":
+            replicas = int(action_plan.get("replicas") or 2)
+            if not name and fallback_pod:
+                name = k8s.get_deployment_for_pod(ns, fallback_pod)
+            return k8s.scale_deployment(ns, name, replicas) if name else f"No deployment resolved for scale in {ns}"
+
+        if action == "expand_pvc":
+            size = action_plan.get("size", "")
+            if not name or not size:
+                return f"expand_pvc requires name and size (got name={name!r}, size={size!r})"
+            return k8s.expand_pvc(ns, name, size)
+
+        if action == "delete_failed_jobs":
+            return k8s.delete_failed_jobs(ns)
+
+        if action == "cordon_node":
+            return k8s.cordon_node(name) if name else "No node name in action plan"
+
+        if action == "drain_node":
+            return k8s.drain_node(name) if name else "No node name in action plan"
+
+        if action == "flux_reconcile":
+            flux_kind = action_plan.get("flux_kind") or "kustomization"
+            return k8s.flux_reconcile(flux_kind, name, ns) if name else "No Flux resource name in action plan"
+
+        if action == "flux_suspend":
+            flux_kind = action_plan.get("flux_kind") or "helmrelease"
+            return k8s.flux_suspend(flux_kind, name, ns) if name else "No Flux resource name in action plan"
+
+        if action == "restart_coredns":
+            return k8s.restart_coredns()
+
+        return "No automated action — human investigation required"
     except Exception as e:
-        return f"Safe restart failed: {e}"
+        return f"Action {action} failed: {e}"
 
 
 def _process_alert(cfg: dict, alert: dict, auto: bool):
@@ -250,11 +350,26 @@ Be direct and specific. Commands only, no background theory."""
     console.print("\n[bold cyan]Remediation Plan:[/bold cyan]")
     console.print(Markdown(plan))
 
+    with console.status("[cyan]Picking remediation action..."):
+        action_plan = _pick_action(ollama, alertname, severity, pod_ref, namespace, pod, diagnosis, summary)
+
+    action_label = action_plan["action"]
+    if action_plan.get("name"):
+        action_label += f" → {action_plan['name']}"
+    console.print(f"\n[bold yellow]Planned action:[/bold yellow] {action_label}")
+
     _notify(
         cfg,
         f"🚨 SRE Agent: {alertname} [{severity}]",
-        f"Pod: {pod_ref or 'N/A'}\nSummary: {summary}\n\nRemediation Plan:\n{plan}",
-        alert_meta={"alertname": alertname, "severity": severity, "pod": pod_ref, "summary": summary, "plan": plan},
+        f"Pod: {pod_ref or 'N/A'}\nSummary: {summary}\n\nAction: {action_label}\n\nRemediation Plan:\n{plan}",
+        alert_meta={
+            "alertname": alertname,
+            "severity": severity,
+            "pod": pod_ref,
+            "summary": summary,
+            "plan": plan,
+            "action": action_label,
+        },
     )
 
     pending = {
@@ -265,24 +380,22 @@ Be direct and specific. Commands only, no background theory."""
         "severity": severity,
         "summary": summary,
         "plan": plan,
+        "action_plan": action_plan,
         "timestamp": _now(),
     }
     PENDING_FILE.parent.mkdir(parents=True, exist_ok=True)
     PENDING_FILE.write_text(json.dumps(pending, indent=2))
 
     if auto:
-        console.print("[bold yellow]⚡ Auto mode: executing safe remediation...[/bold yellow]")
-        if namespace and pod:
-            msg = _safe_restart(namespace, pod)
-            console.print(f"[green]✓ {msg}[/green]")
-            _notify(cfg, "✅ SRE Agent: Auto-remediated", msg)
-        else:
-            console.print("[yellow]No pod in alert labels — cannot auto-restart.[/yellow]")
+        console.print(f"[bold yellow]⚡ Auto mode: executing {action_label}...[/bold yellow]")
+        msg = _execute_action(action_plan, namespace, pod)
+        console.print(f"[green]✓ {msg}[/green]")
+        _notify(cfg, "✅ SRE Agent: Auto-remediated", msg)
         PENDING_FILE.unlink(missing_ok=True)
     else:
         approval_timeout = int(cfg.get("agent_approval_timeout", "300"))
         console.print(
-            f"\nRun [cyan]argus agent approve[/cyan] to restart the pod "
+            f"\nRun [cyan]argus agent approve[/cyan] to execute [bold]{action_label}[/bold] "
             f"or [red]argus agent reject[/red] to skip. "
             f"(Timeout: {approval_timeout}s)"
         )
@@ -295,18 +408,16 @@ def _wait_for_approval(cfg: dict, pending: dict, timeout: int = 300):
 
     namespace = pending["namespace"]
     pod = pending["pod"]
+    action_plan = pending.get("action_plan", {})
     deadline = time.time() + timeout
 
     while time.time() < deadline and not _shutdown:
         if APPROVE_FILE.exists():
             APPROVE_FILE.unlink(missing_ok=True)
             console.print("[bold green]✅ Approved — executing remediation...[/bold green]")
-            if namespace and pod:
-                msg = _safe_restart(namespace, pod)
-                console.print(f"[green]✓ {msg}[/green]")
-                _notify(cfg, "✅ SRE Agent: Remediation executed", msg)
-            else:
-                console.print("[yellow]No pod to restart.[/yellow]")
+            msg = _execute_action(action_plan, namespace, pod)
+            console.print(f"[green]✓ {msg}[/green]")
+            _notify(cfg, "✅ SRE Agent: Remediation executed", msg)
             PENDING_FILE.unlink(missing_ok=True)
             return
         if REJECT_FILE.exists():
@@ -424,9 +535,14 @@ def status():
 
     if PENDING_FILE.exists():
         pending = json.loads(PENDING_FILE.read_text())
+        ap = pending.get("action_plan", {})
+        action_label = ap.get("action", "unknown")
+        if ap.get("name"):
+            action_label += f" → {ap['name']}"
         console.print("\n[bold yellow]Pending action:[/bold yellow]")
         console.print(f"  Alert:  {pending['alertname']} [{pending['severity']}]")
         console.print(f"  Pod:    {pending.get('namespace', '?')}/{pending.get('pod', '?')}")
+        console.print(f"  Action: {action_label}")
         console.print(f"  At:     {pending['timestamp']}")
         console.print("\n  Run [cyan]argus agent approve[/cyan] or [red]argus agent reject[/red]")
     else:
