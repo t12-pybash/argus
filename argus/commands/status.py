@@ -15,10 +15,11 @@ def status():
 
     console.rule("[bold blue]Homelab Status")
 
-    with ThreadPoolExecutor(max_workers=3) as executor:
+    with ThreadPoolExecutor(max_workers=4) as executor:
         f_nodes = executor.submit(prom.nodes_up)
         f_alerts = executor.submit(prom.firing_alerts)
         f_restarts = executor.submit(prom.pod_restarts)
+        f_isvcs = executor.submit(k8s.inference_services)
 
     # Nodes
     table = Table(title="Nodes", box=box.SIMPLE_HEAVY)
@@ -60,7 +61,7 @@ def status():
 
     # InferenceServices (KServe)
     try:
-        isvcs = k8s.inference_services()
+        isvcs = f_isvcs.result()
         if isvcs:
             table = Table(title="Inference Services (KServe)", box=box.SIMPLE_HEAVY)
             table.add_column("Namespace", style="cyan")

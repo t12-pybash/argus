@@ -7,14 +7,17 @@ from argus.commands.diagnose import diagnose as _diagnose
 from argus.commands import incident as _inc
 from argus.commands import agent as _agent
 from argus.commands import model as _model
+from argus.commands import vault as _vault
 
 app = typer.Typer(help="Argus — autonomous SRE intelligence for sovereign infrastructure", no_args_is_help=True)
 incident_app = typer.Typer(help="Incident management", no_args_is_help=True)
 agent_app = typer.Typer(help="Autonomous SRE agent", no_args_is_help=True)
 model_app = typer.Typer(help="Manage KServe InferenceServices", no_args_is_help=True)
+vault_app = typer.Typer(help="Vault / knowledge base management", no_args_is_help=True)
 app.add_typer(incident_app, name="incident")
 app.add_typer(agent_app, name="agent")
 app.add_typer(model_app, name="model")
+app.add_typer(vault_app, name="vault")
 
 
 @app.command()
@@ -111,6 +114,12 @@ def model_rollback(
 ):
     """Rollback an InferenceService to the previous image."""
     _model.rollback(name, namespace)
+
+
+@vault_app.command("sync")
+def vault_sync():
+    """Sync all vault markdown files to Qdrant (full index, not just --save)."""
+    _vault.sync()
 
 
 @incident_app.command("start")
