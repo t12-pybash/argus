@@ -1,3 +1,4 @@
+from concurrent.futures import ThreadPoolExecutor
 from rich.console import Console
 from rich.table import Table
 from rich import box
@@ -33,13 +34,34 @@ def status():
     console.print(table)
 
     for isvc in isvcs:
-        models = k8s.ollama_models(isvc["namespace"], isvc["name"])
+        ns, name = isvc["namespace"], isvc["name"]
+
+        with ThreadPoolExecutor(max_workers=2) as ex:
+            f_models = ex.submit(k8s.ollama_models, ns, name)
+            f_gpu = ex.submit(k8s.gpu_metrics, ns, name)
+
+        models = f_models.result()
         if models:
-            console.print(f"[bold]Models in {isvc['name']}:[/bold]")
+            console.print(f"[bold]Models in {name}:[/bold]")
             for m in models:
                 console.print(f"  • {m['name']}  [dim]({m.get('size', '')})[/dim]")
         else:
-            console.print(f"[yellow]Could not list models for {isvc['name']}[/yellow]")
+            console.print(f"[yellow]Could not list models for {name}[/yellow]")
+
+        try:
+            gpu = f_gpu.result()
+            if gpu:
+                used_gb = gpu["memory_used_mb"] / 1024
+                total_gb = gpu["memory_total_mb"] / 1024
+                pct = gpu["utilization"]
+                bar_filled = int(pct / 5)
+                bar = "█" * bar_filled + "░" * (20 - bar_filled)
+                console.print(
+                    f"  [dim]GPU  [{bar}] {pct}%  |  "
+                    f"VRAM {used_gb:.1f} / {total_gb:.1f} GB[/dim]"
+                )
+        except Exception:
+            pass
 
 
 def rollout(name: str, image: str, namespace: str):

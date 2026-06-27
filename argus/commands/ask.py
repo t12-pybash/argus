@@ -1,6 +1,5 @@
 from concurrent.futures import ThreadPoolExecutor
 from rich.console import Console
-from rich.markdown import Markdown
 from argus.clients.prometheus import PrometheusClient
 from argus.clients.ollama import OllamaClient
 from argus.clients.kubernetes import (
@@ -115,7 +114,13 @@ Question: {question}
 
 Answer concisely and practically."""
 
-    with console.status("[cyan]Thinking..."):
-        response = ollama.ask(prompt)
-
-    console.print(Markdown(response))
+    console.print("[dim cyan]→[/dim cyan] ", end="")
+    full = ""
+    try:
+        for token in ollama.stream(prompt):
+            print(token, end="", flush=True)
+            full += token
+    except Exception:
+        full = ollama.ask(prompt)
+        print(full)
+    print()
