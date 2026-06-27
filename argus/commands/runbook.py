@@ -6,8 +6,13 @@ from rich.markdown import Markdown
 from rich.panel import Panel
 from rich import box
 from argus.clients.ollama import OllamaClient
-from argus.clients.qdrant import upsert_file
 from argus import config as cfg_module
+
+try:
+    from argus.clients.qdrant import upsert_file
+    _qdrant = True
+except ImportError:
+    _qdrant = False
 
 console = Console()
 
@@ -45,6 +50,9 @@ def _save_runbook(vault_path: Path, topic: str, content: str) -> Path:
 
 
 def runbook(query: str, ask: bool = False, generate: bool = False):
+    if not _qdrant:
+        console.print("[red]argus runbook requires Qdrant. Install with: pip install 'argus-sre[rag]'[/red]")
+        return
     cfg = cfg_module.load()
     ollama_url = cfg.get("embed_ollama_url", "http://localhost:11434")
     embed_model = cfg.get("embed_model", "nomic-embed-text")
