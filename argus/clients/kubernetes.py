@@ -196,6 +196,27 @@ def pod_events(namespace: str, pod: str) -> str:
     ])
 
 
+def inference_services() -> list[dict]:
+    """Returns [{namespace, name, ready, url}] for all KServe InferenceServices.
+    Returns empty list if KServe CRDs are not installed."""
+    output = _run(["kubectl", "get", "inferenceservice", "-A", "-o", "json"])
+    if not output:
+        return []
+    try:
+        data = json.loads(output)
+    except json.JSONDecodeError:
+        return []
+    result = []
+    for item in data.get("items", []):
+        ns = item["metadata"]["namespace"]
+        name = item["metadata"]["name"]
+        url = item.get("status", {}).get("url", "")
+        conditions = item.get("status", {}).get("conditions", [])
+        ready = next((c["status"] == "True" for c in conditions if c["type"] == "Ready"), False)
+        result.append({"namespace": ns, "name": name, "ready": ready, "url": url})
+    return result
+
+
 # --- Remediation actions ---
 
 def get_deployment_for_pod(namespace: str, pod: str) -> str:

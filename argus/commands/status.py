@@ -3,6 +3,7 @@ from rich.console import Console
 from rich.table import Table
 from rich import box
 from argus.clients.prometheus import PrometheusClient
+from argus.clients import kubernetes as k8s
 from argus import config as cfg_module
 
 console = Console()
@@ -56,3 +57,19 @@ def status():
                 console.print(f"  • {m.get('namespace','?')}/{m.get('pod','?')}")
     except Exception:
         pass
+
+    # InferenceServices (KServe)
+    try:
+        isvcs = k8s.inference_services()
+        if isvcs:
+            table = Table(title="Inference Services (KServe)", box=box.SIMPLE_HEAVY)
+            table.add_column("Namespace", style="cyan")
+            table.add_column("Name", style="cyan")
+            table.add_column("Ready", justify="center")
+            table.add_column("URL", style="dim")
+            for isvc in isvcs:
+                ready_str = "[green]✓ Ready[/green]" if isvc["ready"] else "[red]✗ Not Ready[/red]"
+                table.add_row(isvc["namespace"], isvc["name"], ready_str, isvc["url"])
+            console.print(table)
+    except Exception as e:
+        console.print(f"[red]ISVC error: {e}[/red]")
