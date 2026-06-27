@@ -1,3 +1,4 @@
+import re
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 from pathlib import Path
@@ -13,6 +14,10 @@ from argus.clients.qdrant import upsert_file
 from argus import config as cfg_module
 
 console = Console()
+
+
+def _strip_thinking(text: str) -> str:
+    return re.sub(r"<think>.*?</think>", "", text, flags=re.DOTALL).strip()
 
 
 def _truncate(text: str, max_lines: int) -> str:
@@ -102,10 +107,13 @@ Relevant Kubernetes facts to apply when interpreting the evidence:
 If the evidence is insufficient to determine the root cause, say so — do not speculate."""
 
     cfg = cfg_module.load()
-    ollama = OllamaClient(cfg["ollama_url"], cfg["ollama_model"], cfg.get("ollama_api_key", ""))
+    model = cfg.get("diagnose_model", "deepseek-r1:7b")
+    ollama = OllamaClient(cfg["ollama_url"], model, cfg.get("ollama_api_key", ""))
 
-    with console.status("[cyan]Analysing..."):
-        analysis = ollama.ask(prompt)
+    with console.status(f"[cyan]Reasoning with {model}..."):
+        raw = ollama.ask(prompt)
+
+    analysis = _strip_thinking(raw)
 
     console.print("\n")
     console.print(Markdown(analysis))
