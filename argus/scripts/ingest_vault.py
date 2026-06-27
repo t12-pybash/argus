@@ -13,7 +13,7 @@ from argus import config as cfg_module
 COLLECTION = "vault"
 CHUNK_SIZE = 400
 CHUNK_OVERLAP = 50
-CACHE_PATH = Path.home() / ".config" / "sre" / "ingest_cache.json"
+CACHE_PATH = Path.home() / ".config" / "argus" / "ingest_cache.json"
 
 
 def chunk_text(text: str, size: int = CHUNK_SIZE, overlap: int = CHUNK_OVERLAP) -> list[str]:

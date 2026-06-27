@@ -23,7 +23,7 @@ log = logging.getLogger(__name__)
 TOPIC = "vault-changes"
 VAULT_REPO = "git@github.com:t12-pybash/obsidian-vault.git"
 VAULT_DIR = Path("/vault")
-SHA_FILE = Path.home() / ".config" / "sre" / "last_sha"
+SHA_FILE = Path.home() / ".config" / "argus" / "last_sha"
 
 
 def setup_ssh():

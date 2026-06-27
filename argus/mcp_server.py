@@ -8,7 +8,7 @@ from argus.clients.alertmanager import AlertmanagerClient
 from argus.clients.prometheus import PrometheusClient
 from argus import config as cfg_module
 
-mcp = FastMCP("homelab-sre")
+mcp = FastMCP("homelab-argus")
 _cfg = cfg_module.load()
 _prom = PrometheusClient(_cfg["prometheus_url"])
 _am = AlertmanagerClient(_cfg["alertmanager_url"])
