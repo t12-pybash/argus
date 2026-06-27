@@ -3,10 +3,10 @@ FROM python:3.12-slim
 WORKDIR /app
 
 COPY pyproject.toml README.md ./
-COPY sre ./sre
+COPY argus ./argus
 
 RUN apt-get update && apt-get install -y --no-install-recommends git openssh-client && \
     rm -rf /var/lib/apt/lists/* && \
     pip install --no-cache-dir -e .
 
-CMD ["python", "-m", "sre.scripts.ingest_vault"]
+CMD ["python", "-m", "argus.scripts.ingest_vault"]
