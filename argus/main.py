@@ -91,6 +91,12 @@ def agent_status():
     _agent.status()
 
 
+@agent_app.command("kill")
+def agent_kill():
+    """Force kill the running agent process."""
+    _agent.kill()
+
+
 @model_app.command("status")
 def model_status():
     """Show InferenceService health and available models."""
