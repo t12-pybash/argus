@@ -21,6 +21,9 @@ DEFAULTS = {
     "agent_approval_timeout": "300",
     "agent_webhook_port": "7654",
     "agent_interactivity_url": "",
+    "slack_bot_token": "",
+    "slack_app_token": "",
+    "slack_channel": "#homelab-alerts",
 }
 
 def load() -> dict:

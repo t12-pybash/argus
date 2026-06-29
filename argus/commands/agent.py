@@ -108,6 +108,58 @@ def _start_webhook_server(port: int):
         console.print(f"[yellow]⚠ Webhook server failed to start on :{port}: {e}[/yellow]")
 
 
+def _start_slack_socket_mode(cfg: dict):
+    """Start Slack Socket Mode in a background thread — outbound WebSocket, no public URL needed."""
+    global _approval_result
+    bot_token = cfg.get("slack_bot_token", "")
+    app_token = cfg.get("slack_app_token", "")
+    if not bot_token or not app_token:
+        return False
+    try:
+        from slack_bolt import App
+        from slack_bolt.adapter.socket_mode import SocketModeHandler
+
+        bolt_app = App(token=bot_token, logger=None)
+
+        @bolt_app.action("approve")
+        def handle_approve(ack, body):  # noqa: ARG001
+            global _approval_result
+            ack()
+            _approval_result = "approve"
+            _approval_event.set()
+
+        @bolt_app.action("reject")
+        def handle_reject(ack, body):  # noqa: ARG001
+            global _approval_result
+            ack()
+            _approval_result = "reject"
+            _approval_event.set()
+
+        handler = SocketModeHandler(bolt_app, app_token)
+        t = threading.Thread(target=handler.start, daemon=True)
+        t.start()
+        console.print("[dim]Slack Socket Mode connected — buttons active[/dim]")
+        return True
+    except ImportError:
+        console.print("[yellow]⚠ slack-bolt not installed — run: pip install 'argus-sre[agent]'[/yellow]")
+        return False
+    except Exception as e:
+        console.print(f"[yellow]⚠ Slack Socket Mode failed: {e}[/yellow]")
+        return False
+
+
+def _post_slack_message(bot_token: str, channel: str, blocks: list) -> str | None:
+    """Post via bot token — returns message ts for updates."""
+    try:
+        from slack_sdk import WebClient
+        client = WebClient(token=bot_token)
+        resp = client.chat_postMessage(channel=channel, blocks=blocks)
+        return resp["ts"]
+    except Exception as e:
+        console.print(f"[yellow]⚠ Slack chat.postMessage failed: {e}[/yellow]")
+        return None
+
+
 def _now() -> str:
     return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
@@ -123,7 +175,7 @@ def _save_seen(seen: set):
     SEEN_FILE.write_text(json.dumps(list(seen)))
 
 
-def _slack_payload(title: str, alertname: str, severity: str, pod: str, summary: str, plan: str, action: str = "", interactive: bool = False) -> dict:
+def _slack_payload(title: str, alertname: str, severity: str, pod: str, summary: str, plan: str, action: str = "", interactive: bool = True) -> dict:
     clean_plan = plan.replace("```bash", "```").replace("```shell", "```")
     clean_plan = clean_plan.replace("**", "")
     blocks = [
@@ -178,8 +230,31 @@ def _slack_payload(title: str, alertname: str, severity: str, pod: str, summary:
 
 
 def _notify(cfg: dict, title: str, body: str, alert_meta: dict | None = None):
+    bot_token = cfg.get("slack_bot_token", "")
+    channel = cfg.get("slack_channel", "#homelab-alerts")
+
+    # Socket Mode path: use chat.postMessage with interactive buttons
+    if bot_token and alert_meta:
+        blocks = _slack_payload(
+            title=title,
+            alertname=alert_meta["alertname"],
+            severity=alert_meta["severity"],
+            pod=alert_meta["pod"],
+            summary=alert_meta["summary"],
+            plan=alert_meta["plan"],
+            action=alert_meta.get("action", ""),
+            interactive=True,
+        )["blocks"]
+        _post_slack_message(bot_token, channel, blocks)
+    elif bot_token:
+        # Non-alert notifications (e.g. remediation executed)
+        _post_slack_message(bot_token, channel, [
+            {"type": "section", "text": {"type": "mrkdwn", "text": f"*{title}*\n{body}"}}
+        ])
+
+    # Webhook fallback (ntfy, Discord, plain Slack webhook)
     webhook_url = cfg.get("agent_webhook_url", "")
-    if webhook_url:
+    if webhook_url and not bot_token:
         try:
             if "discord.com" in webhook_url:
                 payload = {"content": f"**{title}**\n{body}", "username": "argus-agent"}
@@ -187,7 +262,6 @@ def _notify(cfg: dict, title: str, body: str, alert_meta: dict | None = None):
                 httpx.post(webhook_url, content=body, headers={"Title": title}, timeout=10)
                 payload = None
             elif "hooks.slack.com" in webhook_url and alert_meta:
-                interactive = bool(cfg.get("agent_interactivity_url", ""))
                 payload = _slack_payload(
                     title=title,
                     alertname=alert_meta["alertname"],
@@ -196,7 +270,7 @@ def _notify(cfg: dict, title: str, body: str, alert_meta: dict | None = None):
                     summary=alert_meta["summary"],
                     plan=alert_meta["plan"],
                     action=alert_meta.get("action", ""),
-                    interactive=interactive,
+                    interactive=False,
                 )
             else:
                 payload = {"text": f"*{title}*\n{body}", "username": "argus-agent", "icon_emoji": ":robot_face:"}
@@ -204,6 +278,7 @@ def _notify(cfg: dict, title: str, body: str, alert_meta: dict | None = None):
                 httpx.post(webhook_url, json=payload, timeout=10)
         except Exception as e:
             console.print(f"[yellow]⚠ Webhook failed: {e}[/yellow]")
+
     console.print(Panel(body, title=f"[bold]{title}[/bold]", box=box.ROUNDED, expand=False))
 
 
@@ -568,8 +643,10 @@ def start(auto: bool = False, interval: int = 30, namespaces: str = ""):
     cfg = cfg_module.load()
     watch_namespaces = {n.strip() for n in namespaces.split(",") if n.strip()}
 
-    webhook_port = int(cfg.get("agent_webhook_port", "7654"))
-    _start_webhook_server(webhook_port)
+    socket_mode = _start_slack_socket_mode(cfg)
+    if not socket_mode:
+        webhook_port = int(cfg.get("agent_webhook_port", "7654"))
+        _start_webhook_server(webhook_port)
 
     console.print(f"[bold green]argus agent started[/bold green] (pid={os.getpid()})")
     console.print(
