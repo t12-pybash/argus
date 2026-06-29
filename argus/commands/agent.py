@@ -231,30 +231,12 @@ def _slack_payload(title: str, alertname: str, severity: str, pod: str, summary:
 
 def _notify(cfg: dict, title: str, body: str, alert_meta: dict | None = None):
     bot_token = cfg.get("slack_bot_token", "")
-    channel = cfg.get("slack_channel", "#homelab-alerts")
-
-    # Socket Mode path: use chat.postMessage with interactive buttons
-    if bot_token and alert_meta:
-        blocks = _slack_payload(
-            title=title,
-            alertname=alert_meta["alertname"],
-            severity=alert_meta["severity"],
-            pod=alert_meta["pod"],
-            summary=alert_meta["summary"],
-            plan=alert_meta["plan"],
-            action=alert_meta.get("action", ""),
-            interactive=True,
-        )["blocks"]
-        _post_slack_message(bot_token, channel, blocks)
-    elif bot_token:
-        # Non-alert notifications (e.g. remediation executed)
-        _post_slack_message(bot_token, channel, [
-            {"type": "section", "text": {"type": "mrkdwn", "text": f"*{title}*\n{body}"}}
-        ])
-
-    # Webhook fallback (ntfy, Discord, plain Slack webhook)
     webhook_url = cfg.get("agent_webhook_url", "")
-    if webhook_url and not bot_token:
+    # Socket Mode active: send via webhook with interactive buttons
+    # (bot token used only for receiving button clicks, not posting)
+    socket_mode_active = bool(bot_token)
+
+    if webhook_url:
         try:
             if "discord.com" in webhook_url:
                 payload = {"content": f"**{title}**\n{body}", "username": "argus-agent"}
@@ -270,7 +252,7 @@ def _notify(cfg: dict, title: str, body: str, alert_meta: dict | None = None):
                     summary=alert_meta["summary"],
                     plan=alert_meta["plan"],
                     action=alert_meta.get("action", ""),
-                    interactive=False,
+                    interactive=socket_mode_active,
                 )
             else:
                 payload = {"text": f"*{title}*\n{body}", "username": "argus-agent", "icon_emoji": ":robot_face:"}
@@ -352,7 +334,7 @@ Reply with ONLY a valid JSON object, no other text:
 {{
   "action": "<action from guide>",
   "namespace": "{namespace or ""}",
-  "name": "<deployment, pod, node, or PVC name — empty if not applicable>",
+  "name": "<DEPLOYMENT name only, not pod name — strip ReplicaSet hash suffix e.g. 'pushgateway' not 'pushgateway-54d7649848-xmjt2'>",
   "replicas": 0,
   "size": "",
   "flux_kind": "",
