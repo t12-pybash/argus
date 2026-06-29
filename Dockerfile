@@ -10,6 +10,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends git openssh-cli
     install -o root -g root -m 0755 kubectl /usr/local/bin/kubectl && \
     rm kubectl && \
     rm -rf /var/lib/apt/lists/* && \
-    pip install --no-cache-dir -e .
+    pip install --no-cache-dir -e ".[agent]"
 
 CMD ["python", "-m", "argus.scripts.ingest_vault"]
