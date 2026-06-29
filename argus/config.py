@@ -19,6 +19,8 @@ DEFAULTS = {
     "agent_webhook_type": "",
     "agent_poll_interval": "30",
     "agent_approval_timeout": "300",
+    "agent_webhook_port": "7654",
+    "agent_interactivity_url": "",
 }
 
 def load() -> dict:

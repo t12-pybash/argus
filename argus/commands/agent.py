@@ -36,6 +36,15 @@ _approval_result: str | None = None  # "approve" or "reject"
 
 
 class _WebhookHandler(BaseHTTPRequestHandler):
+    def do_GET(self):
+        if self.path == "/healthz":
+            self.send_response(200)
+            self.end_headers()
+            self.wfile.write(b"ok")
+        else:
+            self.send_response(404)
+            self.end_headers()
+
     def do_POST(self):
         global _approval_result
         length = int(self.headers.get("Content-Length", 0))
