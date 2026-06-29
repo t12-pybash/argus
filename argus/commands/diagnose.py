@@ -155,11 +155,26 @@ If the evidence is insufficient to determine the root cause, say so — do not s
     model = cfg.get("diagnose_model", "deepseek-r1:7b")
     ollama = OllamaClient(cfg["ollama_url"], model, cfg.get("ollama_api_key", ""))
 
-    with console.status(f"[cyan]Reasoning with {model}..."):
-        raw = ollama.ask(prompt)
+    console.print(f"\n[dim]Reasoning with {model}…[/dim]")
+    raw = ""
+    in_think = False
+    think_shown = False
+    for token in ollama.stream(prompt):
+        raw += token
+        # suppress <think>...</think> blocks, show a one-time indicator
+        if "<think>" in raw and not think_shown:
+            console.print("[dim cyan]⟳ thinking...[/dim cyan]", end="\r")
+            think_shown = True
+            in_think = True
+        if in_think:
+            if "</think>" in raw:
+                in_think = False
+                console.print(" " * 30, end="\r")  # clear the thinking line
+        else:
+            print(token, end="", flush=True)
+    print()
 
     analysis = _strip_thinking(raw)
-
     console.print("\n")
     console.print(Markdown(analysis))
 
