@@ -52,9 +52,21 @@ class _WebhookHandler(BaseHTTPRequestHandler):
         result = None
 
         if self.path == "/slack/actions":
-            # Slack interactive component: payload=<url-encoded JSON>
             try:
                 raw = urllib.parse.unquote(body)
+                # Slack URL verification challenge
+                if '"type":"url_verification"' in raw or "url_verification" in raw:
+                    try:
+                        data = json.loads(raw)
+                        challenge = data.get("challenge", "")
+                        self.send_response(200)
+                        self.send_header("Content-Type", "application/json")
+                        self.end_headers()
+                        self.wfile.write(json.dumps({"challenge": challenge}).encode())
+                        return
+                    except Exception:
+                        pass
+                # Slack interactive component: payload=<url-encoded JSON>
                 if raw.startswith("payload="):
                     raw = raw[len("payload="):]
                 payload = json.loads(raw)
