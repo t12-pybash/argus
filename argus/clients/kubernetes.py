@@ -217,6 +217,35 @@ def inference_services() -> list[dict]:
     return result
 
 
+def gpu_metrics(namespace: str, isvc_name: str) -> dict | None:
+    """Returns GPU utilization % and VRAM usage via nvidia-smi exec into predictor pod."""
+    pod = _run([
+        "kubectl", "get", "pod", "-n", namespace,
+        "-l", f"serving.kserve.io/inferenceservice={isvc_name}",
+        "--no-headers", "-o", "custom-columns=NAME:.metadata.name"
+    ])
+    if not pod:
+        return None
+    output = _run([
+        "kubectl", "exec", pod, "-n", namespace, "--",
+        "nvidia-smi", "--query-gpu=utilization.gpu,memory.used,memory.total",
+        "--format=csv,noheader,nounits"
+    ])
+    if not output:
+        return None
+    parts = [p.strip() for p in output.split(",")]
+    if len(parts) < 3:
+        return None
+    try:
+        return {
+            "utilization": int(parts[0]),
+            "memory_used_mb": int(parts[1]),
+            "memory_total_mb": int(parts[2]),
+        }
+    except ValueError:
+        return None
+
+
 def ollama_models(namespace: str, isvc_name: str) -> list[dict]:
     """List Ollama models via 'ollama list' exec into the predictor pod."""
     pod = _run([
@@ -292,14 +321,15 @@ def get_deployment_for_pod(namespace: str, pod: str) -> str:
     return deployment or rs
 
 
-def rollout_restart(namespace: str, deployment: str) -> str:
-    result = subprocess.run(
-        ["kubectl", "rollout", "restart", f"deployment/{deployment}", "-n", namespace],
-        capture_output=True, text=True, timeout=15,
-    )
-    if result.returncode == 0:
-        return f"Restarted deployment/{deployment} in {namespace}"
-    return f"Rollout restart failed: {result.stderr.strip()}"
+def rollout_restart(namespace: str, name: str) -> str:
+    for kind in ("deployment", "daemonset", "statefulset"):
+        result = subprocess.run(
+            ["kubectl", "rollout", "restart", f"{kind}/{name}", "-n", namespace],
+            capture_output=True, text=True, timeout=15,
+        )
+        if result.returncode == 0:
+            return f"Restarted {kind}/{name} in {namespace}"
+    return f"Rollout restart failed: {name} not found as deployment, daemonset, or statefulset in {namespace}"
 
 
 def rollout_undo(namespace: str, deployment: str) -> str:
