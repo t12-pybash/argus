@@ -1,9 +1,12 @@
 import json
 import os
 import signal
+import threading
 import time
+import urllib.parse
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
+from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
 
 import httpx
@@ -27,6 +30,61 @@ APPROVE_FILE = Path.home() / ".config" / "argus" / "agent_approve"
 REJECT_FILE = Path.home() / ".config" / "argus" / "agent_reject"
 
 _shutdown = False
+_sigterm_count = 0
+_approval_event = threading.Event()
+_approval_result: str | None = None  # "approve" or "reject"
+
+
+class _WebhookHandler(BaseHTTPRequestHandler):
+    def do_POST(self):
+        global _approval_result
+        length = int(self.headers.get("Content-Length", 0))
+        body = self.rfile.read(length).decode()
+        result = None
+
+        if self.path == "/slack/actions":
+            # Slack interactive component: payload=<url-encoded JSON>
+            try:
+                raw = urllib.parse.unquote(body)
+                if raw.startswith("payload="):
+                    raw = raw[len("payload="):]
+                payload = json.loads(raw)
+                action_id = payload.get("actions", [{}])[0].get("action_id", "")
+                if action_id in ("approve", "reject"):
+                    result = action_id
+            except Exception:
+                pass
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.end_headers()
+            self.wfile.write(b'{"text":"Processing..."}')
+
+        elif self.path in ("/approve", "/reject"):
+            result = "approve" if self.path == "/approve" else "reject"
+            self.send_response(200)
+            self.end_headers()
+            self.wfile.write(b"ok")
+
+        else:
+            self.send_response(404)
+            self.end_headers()
+
+        if result:
+            _approval_result = result
+            _approval_event.set()
+
+    def log_message(self, *_):
+        pass
+
+
+def _start_webhook_server(port: int):
+    try:
+        server = HTTPServer(("", port), _WebhookHandler)
+        t = threading.Thread(target=server.serve_forever, daemon=True)
+        t.start()
+        console.print(f"[dim]Webhook on :{port} — POST /approve · /reject · /slack/actions[/dim]")
+    except OSError as e:
+        console.print(f"[yellow]⚠ Webhook server failed to start on :{port}: {e}[/yellow]")
 
 
 def _now() -> str:
@@ -44,38 +102,58 @@ def _save_seen(seen: set):
     SEEN_FILE.write_text(json.dumps(list(seen)))
 
 
-def _slack_payload(title: str, alertname: str, severity: str, pod: str, summary: str, plan: str, action: str = "") -> dict:
+def _slack_payload(title: str, alertname: str, severity: str, pod: str, summary: str, plan: str, action: str = "", interactive: bool = False) -> dict:
     clean_plan = plan.replace("```bash", "```").replace("```shell", "```")
     clean_plan = clean_plan.replace("**", "")
-    return {
-        "blocks": [
-            {
-                "type": "header",
-                "text": {"type": "plain_text", "text": title, "emoji": True},
-            },
-            {
-                "type": "section",
-                "fields": [
-                    {"type": "mrkdwn", "text": f"*Alert:*\n{alertname}"},
-                    {"type": "mrkdwn", "text": f"*Severity:*\n{severity}"},
-                    {"type": "mrkdwn", "text": f"*Pod:*\n{pod or 'N/A'}"},
-                    {"type": "mrkdwn", "text": f"*Summary:*\n{summary}"},
-                    {"type": "mrkdwn", "text": f"*Action:*\n`{action or 'none'}`"},
-                ],
-            },
-            {"type": "divider"},
-            {
-                "type": "section",
-                "text": {"type": "mrkdwn", "text": f"*Remediation Plan:*\n{clean_plan[:2900]}"},
-            },
-            {
-                "type": "context",
-                "elements": [
-                    {"type": "mrkdwn", "text": "Run `argus agent approve` to execute · `argus agent reject` to skip"}
-                ],
-            },
-        ]
-    }
+    blocks = [
+        {
+            "type": "header",
+            "text": {"type": "plain_text", "text": title, "emoji": True},
+        },
+        {
+            "type": "section",
+            "fields": [
+                {"type": "mrkdwn", "text": f"*Alert:*\n{alertname}"},
+                {"type": "mrkdwn", "text": f"*Severity:*\n{severity}"},
+                {"type": "mrkdwn", "text": f"*Pod:*\n{pod or 'N/A'}"},
+                {"type": "mrkdwn", "text": f"*Summary:*\n{summary}"},
+                {"type": "mrkdwn", "text": f"*Action:*\n`{action or 'none'}`"},
+            ],
+        },
+        {"type": "divider"},
+        {
+            "type": "section",
+            "text": {"type": "mrkdwn", "text": f"*Remediation Plan:*\n{clean_plan[:2900]}"},
+        },
+    ]
+    if interactive:
+        blocks.append({
+            "type": "actions",
+            "elements": [
+                {
+                    "type": "button",
+                    "text": {"type": "plain_text", "text": "✅ Approve", "emoji": True},
+                    "style": "primary",
+                    "action_id": "approve",
+                    "value": "approve",
+                },
+                {
+                    "type": "button",
+                    "text": {"type": "plain_text", "text": "❌ Reject", "emoji": True},
+                    "style": "danger",
+                    "action_id": "reject",
+                    "value": "reject",
+                },
+            ],
+        })
+    else:
+        blocks.append({
+            "type": "context",
+            "elements": [
+                {"type": "mrkdwn", "text": "Run `argus agent approve` to execute · `argus agent reject` to skip"}
+            ],
+        })
+    return {"blocks": blocks}
 
 
 def _notify(cfg: dict, title: str, body: str, alert_meta: dict | None = None):
@@ -88,6 +166,7 @@ def _notify(cfg: dict, title: str, body: str, alert_meta: dict | None = None):
                 httpx.post(webhook_url, content=body, headers={"Title": title}, timeout=10)
                 payload = None
             elif "hooks.slack.com" in webhook_url and alert_meta:
+                interactive = bool(cfg.get("agent_interactivity_url", ""))
                 payload = _slack_payload(
                     title=title,
                     alertname=alert_meta["alertname"],
@@ -95,6 +174,8 @@ def _notify(cfg: dict, title: str, body: str, alert_meta: dict | None = None):
                     pod=alert_meta["pod"],
                     summary=alert_meta["summary"],
                     plan=alert_meta["plan"],
+                    action=alert_meta.get("action", ""),
+                    interactive=interactive,
                 )
             else:
                 payload = {"text": f"*{title}*\n{body}", "username": "argus-agent", "icon_emoji": ":robot_face:"}
@@ -402,6 +483,9 @@ Be direct and specific. Commands only, no background theory."""
 
 
 def _wait_for_approval(cfg: dict, pending: dict, timeout: int = 300):
+    global _approval_result
+    _approval_event.clear()
+    _approval_result = None
     APPROVE_FILE.unlink(missing_ok=True)
     REJECT_FILE.unlink(missing_ok=True)
 
@@ -411,33 +495,48 @@ def _wait_for_approval(cfg: dict, pending: dict, timeout: int = 300):
     deadline = time.time() + timeout
 
     while time.time() < deadline and not _shutdown:
+        # Check event (set by webhook server or signal handler)
+        if _approval_event.wait(timeout=1):
+            _approval_event.clear()
+            break
+        # Legacy file-based fallback
         if APPROVE_FILE.exists():
             APPROVE_FILE.unlink(missing_ok=True)
-            console.print("[bold green]✅ Approved — executing remediation...[/bold green]")
-            msg = _execute_action(action_plan, namespace, pod)
-            console.print(f"[green]✓ {msg}[/green]")
-            _notify(cfg, "✅ SRE Agent: Remediation executed", msg)
-            PENDING_FILE.unlink(missing_ok=True)
-            return
+            _approval_result = "approve"
+            break
         if REJECT_FILE.exists():
             REJECT_FILE.unlink(missing_ok=True)
-            console.print("[yellow]⏭ Rejected — skipping remediation.[/yellow]")
-            PENDING_FILE.unlink(missing_ok=True)
-            return
-        time.sleep(5)
+            _approval_result = "reject"
+            break
 
-    console.print(f"[yellow]⏱ Approval timeout ({timeout}s) — skipping.[/yellow]")
-    PENDING_FILE.unlink(missing_ok=True)
+    if _approval_result == "approve":
+        console.print("[bold green]✅ Approved — executing remediation...[/bold green]")
+        msg = _execute_action(action_plan, namespace, pod)
+        console.print(f"[green]✓ {msg}[/green]")
+        _notify(cfg, "✅ SRE Agent: Remediation executed", msg)
+        PENDING_FILE.unlink(missing_ok=True)
+    elif _approval_result == "reject":
+        console.print("[yellow]⏭ Rejected — skipping remediation.[/yellow]")
+        PENDING_FILE.unlink(missing_ok=True)
+    else:
+        console.print(f"[yellow]⏱ Approval timeout ({timeout}s) — skipping.[/yellow]")
+        PENDING_FILE.unlink(missing_ok=True)
 
 
 def start(auto: bool = False, interval: int = 30, namespaces: str = ""):
-    global _shutdown
+    global _shutdown, _sigterm_count
     _shutdown = False
+    _sigterm_count = 0
 
     def _handle_signal(sig, frame):
-        global _shutdown
+        global _shutdown, _sigterm_count
+        _sigterm_count += 1
         _shutdown = True
-        console.print("\n[yellow]Shutting down argus agent...[/yellow]")
+        _approval_event.set()  # immediately unblock any waiting approval loop
+        if _sigterm_count > 1:
+            console.print("\n[red]Force killing...[/red]")
+            os.kill(os.getpid(), signal.SIGKILL)
+        console.print("\n[yellow]Shutting down (send again to force kill)...[/yellow]")
 
     signal.signal(signal.SIGINT, _handle_signal)
     signal.signal(signal.SIGTERM, _handle_signal)
@@ -447,6 +546,9 @@ def start(auto: bool = False, interval: int = 30, namespaces: str = ""):
 
     cfg = cfg_module.load()
     watch_namespaces = {n.strip() for n in namespaces.split(",") if n.strip()}
+
+    webhook_port = int(cfg.get("agent_webhook_port", "7654"))
+    _start_webhook_server(webhook_port)
 
     console.print(f"[bold green]argus agent started[/bold green] (pid={os.getpid()})")
     console.print(
@@ -500,6 +602,24 @@ def start(auto: bool = False, interval: int = 30, namespaces: str = ""):
     finally:
         PID_FILE.unlink(missing_ok=True)
         console.print("\n[green]argus agent stopped.[/green]")
+
+
+def kill():
+    if PID_FILE.exists():
+        try:
+            pid = int(PID_FILE.read_text().strip())
+            os.kill(pid, signal.SIGKILL)
+            PID_FILE.unlink(missing_ok=True)
+            console.print(f"[green]✓ Agent killed (PID {pid})[/green]")
+        except (ValueError, ProcessLookupError):
+            PID_FILE.unlink(missing_ok=True)
+            console.print("[yellow]Agent not running (stale PID file removed)[/yellow]")
+    else:
+        ret = os.system("pkill -9 -f 'argus agent start' 2>/dev/null")
+        if ret == 0:
+            console.print("[green]✓ Agent killed[/green]")
+        else:
+            console.print("[yellow]No agent found running[/yellow]")
 
 
 def approve():
