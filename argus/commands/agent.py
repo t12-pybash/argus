@@ -313,6 +313,7 @@ _ALERT_ACTION_OVERRIDES: dict[str, str] = {
     "KubeJobFailed": "delete_failed_jobs",
     "PrometheusDuplicateTimestamps": "none",
     "CPUThrottlingHigh": "rollout_restart",
+    "KubeDeploymentReplicasMismatch": "none",
 }
 
 
