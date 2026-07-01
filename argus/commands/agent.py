@@ -298,7 +298,7 @@ _ACTION_GUIDE = """
 - force_delete_pod: pod stuck in Terminating or Unknown state
 - scale_deployment: resource pressure, need more replicas (set replicas field)
 - expand_pvc: PVC near capacity — set name to PVC name and size to new capacity e.g. 20Gi
-- delete_failed_jobs: failed batch jobs accumulating in namespace
+- delete_failed_jobs: job did not complete or failed (KubeJobNotCompleted, KubeJobFailed) — set name to the job name
 - cordon_node: node unhealthy, stop scheduling new pods onto it (set name to node name)
 - drain_node: evacuate all pods from a troubled node (set name to node name)
 - flux_reconcile: Flux sync stuck or drifted (set flux_kind to kustomization or helmrelease)
@@ -306,6 +306,12 @@ _ACTION_GUIDE = """
 - restart_coredns: DNS resolution failures cluster-wide
 - none: requires human investigation, no safe automated action
 """
+
+# Deterministic overrides — alert names that always map to a specific action regardless of LLM output
+_ALERT_ACTION_OVERRIDES: dict[str, str] = {
+    "KubeJobNotCompleted": "delete_failed_jobs",
+    "KubeJobFailed": "delete_failed_jobs",
+}
 
 
 def _pick_action(
@@ -334,7 +340,7 @@ Reply with ONLY a valid JSON object, no other text:
 {{
   "action": "<action from guide>",
   "namespace": "{namespace or ""}",
-  "name": "<DEPLOYMENT name only, not pod name — strip ReplicaSet hash suffix e.g. 'pushgateway' not 'pushgateway-54d7649848-xmjt2'>",
+  "name": "<resource name — for jobs: job name; for deployments: deployment name without pod hash suffix; for nodes: node name>",
   "replicas": 0,
   "size": "",
   "flux_kind": "",
@@ -349,10 +355,13 @@ Reply with ONLY a valid JSON object, no other text:
             parsed = json.loads(match.group())
             if parsed.get("action") not in _VALID_ACTIONS:
                 parsed["action"] = "none"
+            if alertname in _ALERT_ACTION_OVERRIDES:
+                parsed["action"] = _ALERT_ACTION_OVERRIDES[alertname]
             return parsed
     except Exception:
         pass
-    return {"action": "none", "namespace": namespace, "name": "", "safe_to_auto": False}
+    action = _ALERT_ACTION_OVERRIDES.get(alertname, "none")
+    return {"action": action, "namespace": namespace, "name": "", "safe_to_auto": False}
 
 
 def _execute_action(action_plan: dict, fallback_namespace: str, fallback_pod: str) -> str:
