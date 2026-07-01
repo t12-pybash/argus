@@ -307,6 +307,9 @@ _ACTION_GUIDE = """
 - none: requires human investigation, no safe automated action
 """
 
+# Alerts to silently skip — meta-alerts or self-healing noise that never warrant diagnosis or Slack messages
+_SKIP_ALERTS = {"Watchdog", "InfoInhibitor"}
+
 # Deterministic overrides — alert names that always map to a specific action regardless of LLM output
 _ALERT_ACTION_OVERRIDES: dict[str, str] = {
     "KubeJobNotCompleted": "delete_failed_jobs",
@@ -670,7 +673,7 @@ def start(auto: bool = False, interval: int = 30, namespaces: str = ""):
                 firing = [
                     a for a in all_alerts
                     if a.get("status", {}).get("state") == "active"
-                    and a.get("labels", {}).get("alertname") != "Watchdog"
+                    and a.get("labels", {}).get("alertname") not in _SKIP_ALERTS
                 ]
                 if watch_namespaces:
                     firing = [
