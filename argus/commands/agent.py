@@ -311,6 +311,8 @@ _ACTION_GUIDE = """
 _ALERT_ACTION_OVERRIDES: dict[str, str] = {
     "KubeJobNotCompleted": "delete_failed_jobs",
     "KubeJobFailed": "delete_failed_jobs",
+    "PrometheusDuplicateTimestamps": "none",
+    "CPUThrottlingHigh": "rollout_restart",
 }
 
 
@@ -339,8 +341,8 @@ Action guide:{_ACTION_GUIDE}
 Reply with ONLY a valid JSON object, no other text:
 {{
   "action": "<action from guide>",
-  "namespace": "{namespace or ""}",
-  "name": "<resource name — for jobs: job name; for deployments: deployment name without pod hash suffix; for nodes: node name>",
+  "namespace": "<namespace where the resource lives — for cordon_node/drain_node use empty string; may differ from the alert pod namespace>",
+  "name": "<resource name — for jobs: job name; for deployments: deployment name without pod hash suffix; for cordon_node/drain_node: actual node hostname e.g. cp1 wk4 NOT a pod name>",
   "replicas": 0,
   "size": "",
   "flux_kind": "",
@@ -362,6 +364,11 @@ Reply with ONLY a valid JSON object, no other text:
         pass
     action = _ALERT_ACTION_OVERRIDES.get(alertname, "none")
     return {"action": action, "namespace": namespace, "name": "", "safe_to_auto": False}
+
+
+def _looks_like_pod_name(name: str) -> bool:
+    import re
+    return bool(re.search(r"-[a-z0-9]{5,10}-[a-z0-9]{5}$|-[0-9]+$", name))
 
 
 def _execute_action(action_plan: dict, fallback_namespace: str, fallback_pod: str) -> str:
@@ -400,10 +407,18 @@ def _execute_action(action_plan: dict, fallback_namespace: str, fallback_pod: st
             return k8s.delete_failed_jobs(ns)
 
         if action == "cordon_node":
-            return k8s.cordon_node(name) if name else "No node name in action plan"
+            if not name:
+                return "No node name in action plan"
+            if _looks_like_pod_name(name):
+                return f"Refused cordon — '{name}' looks like a pod name, not a node"
+            return k8s.cordon_node(name)
 
         if action == "drain_node":
-            return k8s.drain_node(name) if name else "No node name in action plan"
+            if not name:
+                return "No node name in action plan"
+            if _looks_like_pod_name(name):
+                return f"Refused drain — '{name}' looks like a pod name, not a node"
+            return k8s.drain_node(name)
 
         if action == "flux_reconcile":
             flux_kind = action_plan.get("flux_kind") or "kustomization"
