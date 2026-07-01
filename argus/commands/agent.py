@@ -536,7 +536,7 @@ Be direct and specific. Commands only, no background theory."""
         action_plan = _pick_action(ollama, alertname, severity, pod_ref, namespace, pod, diagnosis, summary)
 
     action_label = action_plan["action"]
-    if action_plan.get("name"):
+    if action_plan.get("name") and action_label != "none":
         action_label += f" → {action_plan['name']}"
     console.print(f"\n[bold yellow]Planned action:[/bold yellow] {action_label}")
 
@@ -759,7 +759,7 @@ def status():
         pending = json.loads(PENDING_FILE.read_text())
         ap = pending.get("action_plan", {})
         action_label = ap.get("action", "unknown")
-        if ap.get("name"):
+        if ap.get("name") and action_label != "none":
             action_label += f" → {ap['name']}"
         console.print("\n[bold yellow]Pending action:[/bold yellow]")
         console.print(f"  Alert:  {pending['alertname']} [{pending['severity']}]")
