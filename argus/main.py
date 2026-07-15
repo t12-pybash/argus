@@ -8,6 +8,8 @@ from argus.commands import incident as _inc
 from argus.commands import agent as _agent
 from argus.commands import model as _model
 from argus.commands import vault as _vault
+from argus.commands.fix import fix as _fix
+from argus.commands.deploy import deploy as _deploy
 
 app = typer.Typer(help="Argus — autonomous SRE intelligence for sovereign infrastructure", no_args_is_help=True)
 incident_app = typer.Typer(help="Incident management", no_args_is_help=True)
@@ -46,6 +48,24 @@ def runbook(
 ):
     """Search vault runbooks semantically. Use --ask to synthesise, --generate to create and save."""
     _runbook(query, ask=ask, generate=generate)
+
+
+@app.command()
+def fix(
+    pod: str = typer.Argument(..., help="Pod reference as namespace/pod-name"),
+    dry_run: bool = typer.Option(False, "--dry-run", help="Generate YAML only, skip GitLab MR"),
+):
+    """Generate a GitOps fix for a crashing pod and open a GitLab MR for review."""
+    _fix(pod, dry_run=dry_run)
+
+
+@app.command()
+def deploy(
+    intent: str = typer.Argument(..., help="Natural language description of what to deploy"),
+    dry_run: bool = typer.Option(False, "--dry-run", help="Generate YAML only, skip GitLab MR"),
+):
+    """Generate GitOps deployment manifests from a natural language description and open a GitLab MR."""
+    _deploy(intent, dry_run=dry_run)
 
 
 @app.command()

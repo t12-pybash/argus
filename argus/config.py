@@ -8,7 +8,7 @@ DEFAULTS = {
     "loki_url": "https://loki.your-cluster.example",
     "ollama_url": "https://litellm.your-cluster.example",
     "ollama_model": "llama3.1:8b",
-    "diagnose_model": "deepseek-r1:7b",
+    "diagnose_model": "mistral-nemo",
     "ollama_api_key": "",
     "vault_path": str(Path.home() / "Documents/obsidian-vault"),
     "qdrant_url": "https://qdrant.your-cluster.example",
@@ -24,6 +24,10 @@ DEFAULTS = {
     "slack_bot_token": "",
     "slack_app_token": "",
     "slack_channel": "#homelab-alerts",
+    "gitlab_url": "https://gitlab.com",
+    "gitlab_token": "",
+    "gitlab_project_id": "",
+    "gitlab_target_branch": "main",
 }
 
 def load() -> dict:
