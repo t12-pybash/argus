@@ -616,9 +616,26 @@ def _wait_for_approval(cfg: dict, pending: dict, timeout: int = 300):
             break
 
     if _approval_result == "approve":
-        console.print("[bold green]✅ Approved — executing remediation...[/bold green]")
-        msg = _execute_action(action_plan, namespace, pod)
-        console.print(f"[green]✓ {msg}[/green]")
+        mr_iid = pending.get("mr_iid")
+        if mr_iid:
+            # GitOps path — merge the MR, let Flux reconcile
+            console.print("[bold green]✅ Approved — merging GitLab MR...[/bold green]")
+            try:
+                from argus.clients.gitlab import GitLabClient
+                gl = GitLabClient(cfg["gitlab_url"], cfg["gitlab_token"], cfg["gitlab_project_id"])
+                gl.merge_mr(mr_iid)
+                msg = f"MR !{mr_iid} merged — Flux will reconcile shortly"
+                console.print(f"[green]✓ {msg}[/green]")
+                if pending.get("mr_url"):
+                    console.print(f"[dim]{pending['mr_url']}[/dim]")
+            except Exception as e:
+                msg = f"MR merge failed: {e}"
+                console.print(f"[red]✗ {msg}[/red]")
+        else:
+            # Direct action path (legacy)
+            console.print("[bold green]✅ Approved — executing remediation...[/bold green]")
+            msg = _execute_action(action_plan, namespace, pod)
+            console.print(f"[green]✓ {msg}[/green]")
         _notify(cfg, "✅ SRE Agent: Remediation executed", msg)
         PENDING_FILE.unlink(missing_ok=True)
     elif _approval_result == "reject":
