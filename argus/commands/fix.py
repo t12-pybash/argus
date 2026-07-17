@@ -3,6 +3,7 @@ from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 from pathlib import Path
 
+import httpx
 import yaml
 from rich.console import Console
 from rich.markdown import Markdown
@@ -60,16 +61,69 @@ def _validate_yaml(content: str) -> bool:
         return False
 
 
-def fix(pod_ref: str, dry_run: bool = False):
+def _post_fix_slack(cfg: dict, pod_ref: str, mr_url: str, mr_iid: int, yaml_content: str):
+    """Post a Slack notification with the MR link and approve/reject buttons."""
+    bot_token = cfg.get("slack_bot_token", "")
+    webhook_url = cfg.get("agent_webhook_url", "")
+    if not bot_token and not webhook_url:
+        return
+
+    blocks = [
+        {
+            "type": "header",
+            "text": {"type": "plain_text", "text": "🔧 Argus fix: GitOps MR opened", "emoji": True},
+        },
+        {
+            "type": "section",
+            "fields": [
+                {"type": "mrkdwn", "text": f"*Pod:*\n`{pod_ref}`"},
+                {"type": "mrkdwn", "text": f"*MR:*\n<{mr_url}|!{mr_iid} — review patch →>"},
+            ],
+        },
+        {
+            "type": "section",
+            "text": {"type": "mrkdwn", "text": f"```yaml\n{yaml_content[:1500]}\n```"},
+        },
+        {"type": "divider"},
+        {
+            "type": "actions",
+            "elements": [
+                {
+                    "type": "button",
+                    "text": {"type": "plain_text", "text": "✅ Approve & Merge", "emoji": True},
+                    "style": "primary",
+                    "action_id": "approve",
+                    "value": "approve",
+                },
+                {
+                    "type": "button",
+                    "text": {"type": "plain_text", "text": "❌ Reject", "emoji": True},
+                    "style": "danger",
+                    "action_id": "reject",
+                    "value": "reject",
+                },
+            ],
+        },
+    ]
+
+    if bot_token:
+        try:
+            from slack_sdk import WebClient
+            channel = cfg.get("slack_channel", "#homelab-alerts")
+            WebClient(token=bot_token).chat_postMessage(channel=channel, blocks=blocks)
+            return
+        except Exception as e:
+            console.print(f"[yellow]⚠ Slack notification failed: {e}[/yellow]")
+
+    if webhook_url and "hooks.slack.com" in webhook_url:
+        try:
+            httpx.post(webhook_url, json={"blocks": blocks}, timeout=10)
+        except Exception as e:
+            console.print(f"[yellow]⚠ Slack webhook failed: {e}[/yellow]")
+
+
+def fix(pod_ref: str, dry_run: bool = False, notify_slack: bool = True):
     cfg = cfg_module.load()
-
-    if not cfg.get("gitlab_token"):
-        console.print("[red]gitlab_token not configured — set it in config.toml or ARGUS_GITLAB_TOKEN env var.[/red]")
-        return
-
-    if not cfg.get("gitlab_project_id"):
-        console.print("[red]gitlab_project_id not configured — set it in config.toml or ARGUS_GITLAB_PROJECT_ID env var.[/red]")
-        return
 
     if "/" in pod_ref:
         namespace, pod = pod_ref.split("/", 1)
@@ -177,6 +231,14 @@ Output ONLY the YAML starting with ---"""
         console.print("\n[dim]--dry-run: GitLab MR not created.[/dim]")
         return
 
+    if not cfg.get("gitlab_token"):
+        console.print("[red]gitlab_token not configured — set it in config.toml or ARGUS_GITLAB_TOKEN env var.[/red]")
+        return
+
+    if not cfg.get("gitlab_project_id"):
+        console.print("[red]gitlab_project_id not configured — set it in config.toml or ARGUS_GITLAB_PROJECT_ID env var.[/red]")
+        return
+
     # Create GitLab MR
     gl = GitLabClient(cfg["gitlab_url"], cfg["gitlab_token"], cfg["gitlab_project_id"])
     ts = datetime.now().strftime("%Y%m%d-%H%M%S")
@@ -215,6 +277,9 @@ Output ONLY the YAML starting with ---"""
         console.print(f"\n[bold green]✓ MR opened:[/bold green] {mr_url}")
         console.print(f"[dim]Branch: {branch}[/dim]")
         console.print(f"\nApprove and merge via GitLab, or run [cyan]argus agent approve[/cyan] if agent is running.")
+
+        if notify_slack:
+            _post_fix_slack(cfg, pod_ref, mr_url, mr_iid, yaml_content)
 
     except Exception as e:
         console.print(f"[red]GitLab error: {e}[/red]")
