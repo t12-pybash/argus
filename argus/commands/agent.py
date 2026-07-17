@@ -702,7 +702,7 @@ def start(auto: bool = False, interval: int = 30, namespaces: str = ""):
     cfg = cfg_module.load()
     watch_namespaces = {n.strip() for n in namespaces.split(",") if n.strip()}
 
-    socket_mode = _start_slack_socket_mode(cfg)
+    _start_slack_socket_mode(cfg)
     webhook_port = int(cfg.get("agent_webhook_port", "7654"))
     _start_webhook_server(webhook_port)
 

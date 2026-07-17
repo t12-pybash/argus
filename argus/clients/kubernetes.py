@@ -180,6 +180,24 @@ def pod_exit_reason(namespace: str, pod: str) -> str:
     return reason
 
 
+def pod_node(namespace: str, pod: str) -> str:
+    return _run(["kubectl", "get", "pod", pod, "-n", namespace, "-o", "jsonpath={.spec.nodeName}"])
+
+
+def namespace_secrets(namespace: str) -> list[dict]:
+    """Returns [{name, type}] for all secrets in the namespace."""
+    output = _run([
+        "kubectl", "get", "secrets", "-n", namespace, "--no-headers",
+        "-o", "custom-columns=NAME:.metadata.name,TYPE:.type"
+    ])
+    result = []
+    for line in output.splitlines():
+        parts = line.split()
+        if len(parts) >= 2:
+            result.append({"name": parts[0], "type": parts[1]})
+    return result
+
+
 def pod_describe(namespace: str, pod: str) -> str:
     return _run(["kubectl", "describe", "pod", pod, "-n", namespace])
 

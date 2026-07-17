@@ -1,12 +1,10 @@
 import re
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
-from pathlib import Path
 
 import httpx
 import yaml
 from rich.console import Console
-from rich.markdown import Markdown
 from rich.panel import Panel
 from rich import box
 
@@ -276,7 +274,7 @@ Output ONLY the YAML starting with ---"""
 
         console.print(f"\n[bold green]✓ MR opened:[/bold green] {mr_url}")
         console.print(f"[dim]Branch: {branch}[/dim]")
-        console.print(f"\nApprove and merge via GitLab, or run [cyan]argus agent approve[/cyan] if agent is running.")
+        console.print("\nApprove and merge via GitLab, or run [cyan]argus agent approve[/cyan] if agent is running.")
 
         if notify_slack:
             _post_fix_slack(cfg, pod_ref, mr_url, mr_iid, yaml_content)
