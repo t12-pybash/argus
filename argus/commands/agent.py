@@ -175,7 +175,7 @@ def _save_seen(seen: set):
     SEEN_FILE.write_text(json.dumps(list(seen)))
 
 
-def _slack_payload(title: str, alertname: str, severity: str, pod: str, summary: str, plan: str, action: str = "", interactive: bool = True) -> dict:
+def _slack_payload(title: str, alertname: str, severity: str, pod: str, summary: str, plan: str, action: str = "", interactive: bool = True, mr_url: str = "", mr_iid: int | None = None) -> dict:
     clean_plan = plan.replace("```bash", "```").replace("```shell", "```")
     clean_plan = clean_plan.replace("**", "")
     blocks = [
@@ -194,11 +194,21 @@ def _slack_payload(title: str, alertname: str, severity: str, pod: str, summary:
             ],
         },
         {"type": "divider"},
+    ]
+    if mr_url:
+        blocks.append({
+            "type": "section",
+            "text": {
+                "type": "mrkdwn",
+                "text": f"*GitOps fix:* <{mr_url}|MR !{mr_iid} opened →>\nApprove to merge — Flux will apply the patch.",
+            },
+        })
+    blocks.append(
         {
             "type": "section",
             "text": {"type": "mrkdwn", "text": f"*Remediation Plan:*\n{clean_plan[:2900]}"},
         },
-    ]
+    )
     if interactive:
         blocks.append({
             "type": "actions",
@@ -253,6 +263,8 @@ def _notify(cfg: dict, title: str, body: str, alert_meta: dict | None = None):
                     plan=alert_meta["plan"],
                     action=alert_meta.get("action", ""),
                     interactive=socket_mode_active,
+                    mr_url=alert_meta.get("mr_url", ""),
+                    mr_iid=alert_meta.get("mr_iid"),
                 )
             else:
                 payload = {"text": f"*{title}*\n{body}", "username": "argus-agent", "icon_emoji": ":robot_face:"}
@@ -544,6 +556,22 @@ Be direct and specific. Commands only, no background theory."""
         action_label += f" → {action_plan['name']}"
     console.print(f"\n[bold yellow]Planned action:[/bold yellow] {action_label}")
 
+    # Wire: generate a GitOps patch MR for pod alerts when GitLab is configured
+    mr_iid = None
+    mr_url = ""
+    if pod_ref and cfg.get("gitlab_token") and cfg.get("gitlab_project_id"):
+        console.print("[cyan]Generating GitOps fix patch...[/cyan]")
+        try:
+            from argus.commands.fix import fix as _gitops_fix
+            fix_result = _gitops_fix(pod_ref, notify_slack=False)
+            if fix_result:
+                mr_iid = fix_result.get("mr_iid")
+                mr_url = fix_result.get("mr_url", "")
+                if mr_iid:
+                    console.print(f"[green]✓ GitOps MR created: {mr_url}[/green]")
+        except Exception as e:
+            console.print(f"[yellow]⚠ GitOps fix failed: {e}[/yellow]")
+
     _notify(
         cfg,
         f"🚨 SRE Agent: {alertname} [{severity}]",
@@ -555,6 +583,8 @@ Be direct and specific. Commands only, no background theory."""
             "summary": summary,
             "plan": plan,
             "action": action_label,
+            "mr_url": mr_url,
+            "mr_iid": mr_iid,
         },
     )
 
@@ -567,6 +597,8 @@ Be direct and specific. Commands only, no background theory."""
         "summary": summary,
         "plan": plan,
         "action_plan": action_plan,
+        "mr_iid": mr_iid,
+        "mr_url": mr_url,
         "timestamp": _now(),
     }
     PENDING_FILE.parent.mkdir(parents=True, exist_ok=True)
