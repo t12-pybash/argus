@@ -8,7 +8,8 @@ from rich.console import Console
 from rich.panel import Panel
 from rich import box
 
-from argus.clients.kubernetes import pod_describe, pod_logs_previous, pod_events, pod_node, namespace_secrets
+from argus.clients.kubernetes import pod_describe, pod_logs_previous, pod_events, pod_node, namespace_secrets, resolve_pod
+from argus.commands.fix_patterns import match as match_pattern, render as render_pattern
 from argus.clients.ollama import OllamaClient
 from argus.clients.gitlab import GitLabClient
 from argus import config as cfg_module
@@ -128,6 +129,14 @@ def fix(pod_ref: str, dry_run: bool = False, notify_slack: bool = True):
     else:
         namespace, pod = "default", pod_ref
 
+    resolved = resolve_pod(namespace, pod)
+    if not resolved:
+        console.print(f"[red]No pod found matching '{pod}' in namespace '{namespace}'.[/red]")
+        return None
+    if resolved != pod:
+        console.print(f"[dim]Resolved '{pod}' → {resolved}[/dim]")
+        pod = resolved
+
     console.print(f"\n[bold cyan]Generating GitOps fix for[/bold cyan] {namespace}/{pod}\n")
 
     with console.status("[cyan]Gathering pod data..."):
@@ -154,33 +163,46 @@ def fix(pod_ref: str, dry_run: bool = False, notify_slack: bool = True):
         expand=False,
     ))
 
-    # Search vault for relevant runbooks
-    vault_context = ""
+    # Guard: bail out if pod shows no failure signal
     signal = _failure_signal(events, logs or "")
-    if signal and _qdrant:
-        try:
-            with console.status("[cyan]Searching vault for relevant runbooks..."):
-                hits = search_vault(
-                    signal,
-                    cfg["qdrant_url"],
-                    cfg.get("embed_ollama_url", cfg["ollama_url"]),
-                    cfg.get("embed_model", "nomic-embed-text"),
-                )
-            if hits:
-                vault_context = "\n\n---\n\n".join(
-                    f"[{h['payload']['file']}]\n{h['payload']['text']}" for h in hits
-                )
-                console.print(f"[dim]Found {len(hits)} relevant runbook(s) in vault[/dim]")
-        except Exception:
-            pass
+    if not signal:
+        console.print("[green]✓ Pod appears healthy — no failure signal in events or logs. Skipping fix.[/green]")
+        console.print("[dim]To force a fix anyway, trigger a real failure or pass a crashing pod reference.[/dim]")
+        return None
 
-    secrets_list = "\n".join(f"  {s['name']} ({s['type']})" for s in secrets) if secrets else "  (none)"
-    runbook_section = f"""--- Relevant runbooks from vault ---
-{vault_context}
+    # ── Pattern router: known failure types get deterministic fixes ──────────
+    pattern = match_pattern(signal, events, describe)
+    if pattern and not pattern.use_llm:
+        console.print(f"[cyan]Pattern matched:[/cyan] [bold]{pattern.name}[/bold] — {pattern.description}")
+        console.print("[dim]Using deterministic fix template (no LLM needed)[/dim]")
+        yaml_content = render_pattern(pattern, namespace, pod, describe)
+    else:
+        # ── Unknown failure: search vault then ask the LLM ────────────────
+        if pattern and pattern.use_llm:
+            console.print(f"[cyan]Pattern matched:[/cyan] [bold]{pattern.name}[/bold] — handing off to LLM for root cause analysis")
 
-""" if vault_context else ""
+        vault_context = ""
+        if _qdrant:
+            try:
+                with console.status("[cyan]Searching vault for relevant runbooks..."):
+                    hits = search_vault(
+                        signal,
+                        cfg["qdrant_url"],
+                        cfg.get("embed_ollama_url", cfg["ollama_url"]),
+                        cfg.get("embed_model", "nomic-embed-text"),
+                    )
+                if hits:
+                    vault_context = "\n\n---\n\n".join(
+                        f"[{h['payload']['file']}]\n{h['payload']['text']}" for h in hits
+                    )
+                    console.print(f"[dim]Found {len(hits)} relevant runbook(s) in vault[/dim]")
+            except Exception:
+                pass
 
-    prompt = f"""You are a Kubernetes SRE. Generate a GitOps Kubernetes manifest to fix a crashing pod.
+        secrets_list = "\n".join(f"  {s['name']} ({s['type']})" for s in secrets) if secrets else "  (none)"
+        runbook_section = f"--- Relevant runbooks from vault ---\n{vault_context}\n\n" if vault_context else ""
+
+        prompt = f"""You are a Kubernetes SRE. Generate a GitOps Kubernetes manifest to fix a crashing pod.
 
 Pod: {namespace}/{pod}
 Node: {node or "(unknown)"}
@@ -199,28 +221,25 @@ Node: {node or "(unknown)"}
 
 {runbook_section}Requirements:
 - Output ONLY valid Kubernetes YAML — no explanation, no prose
-- One or more YAML documents separated by ---
+- Patch the existing Deployment — do NOT create bare Pods or ReplicaSets
 - Every document must include: apiVersion, kind, metadata.name, metadata.namespace
-- Use strategic merge patches or full resource replacements that target the specific issue
-- The YAML must pass kubeval schema validation
-- Do not use kubectl commands or shell scripts — only declarative Kubernetes manifests
-
-If the fix requires a node-level change (e.g. /etc/resolv.conf edit), generate a DaemonSet Job or privileged Pod that makes the change idempotently.
+- Allowed kinds: Deployment, ConfigMap, Secret, Job, ServiceAccount
+- Do NOT use docker/crictl/kubectl commands inside container specs
+- Do NOT create DaemonSets unless the fix is explicitly node-level
 
 Output ONLY the YAML starting with ---"""
 
-    model = cfg.get("diagnose_model", "mistral-nemo")
-    ollama = OllamaClient(cfg["ollama_url"], model, cfg.get("ollama_api_key", ""))
+        model = cfg.get("diagnose_model", "qwen2.5-coder:7b")
+        ollama = OllamaClient(cfg["ollama_url"], model, cfg.get("ollama_api_key", ""))
 
-    console.print(f"\n[dim]Generating fix with {model}…[/dim]")
-    raw = ollama.ask(prompt)
-    raw = _strip_thinking(raw)
-
-    yaml_content = _extract_yaml(raw)
+        console.print(f"\n[dim]Generating fix with {model}…[/dim]")
+        raw = ollama.ask(prompt)
+        raw = _strip_thinking(raw)
+        yaml_content = _extract_yaml(raw)
 
     if not _validate_yaml(yaml_content):
-        console.print("[yellow]⚠ LLM output is not valid YAML — showing raw output for review:[/yellow]")
-        console.print(Panel(raw, title="[yellow]Raw LLM output[/yellow]", box=box.ROUNDED))
+        console.print("[yellow]⚠ Output is not valid YAML — showing raw output for review:[/yellow]")
+        console.print(Panel(yaml_content, title="[yellow]Raw output[/yellow]", box=box.ROUNDED))
         return
 
     console.print(Panel(yaml_content, title="[green]Generated Fix (YAML)[/green]", box=box.ROUNDED, expand=False))
