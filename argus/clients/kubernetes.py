@@ -198,6 +198,26 @@ def namespace_secrets(namespace: str) -> list[dict]:
     return result
 
 
+def resolve_pod(namespace: str, name: str) -> str:
+    """Resolve a pod name or app/deployment label to an actual pod name.
+
+    Tries exact match first, then falls back to label selector app=<name>.
+    Returns the most recently created matching pod, or empty string if not found.
+    """
+    exact = _run(["kubectl", "get", "pod", name, "-n", namespace, "--no-headers",
+                  "-o", "custom-columns=NAME:.metadata.name", "--ignore-not-found"])
+    if exact:
+        return exact.strip().splitlines()[0]
+    # Fall back to label selector — pick newest pod
+    output = _run([
+        "kubectl", "get", "pods", "-n", namespace, "-l", f"app={name}",
+        "--no-headers", "--sort-by=.metadata.creationTimestamp",
+        "-o", "custom-columns=NAME:.metadata.name"
+    ])
+    pods = [line.strip() for line in output.splitlines() if line.strip()]
+    return pods[-1] if pods else ""
+
+
 def pod_describe(namespace: str, pod: str) -> str:
     return _run(["kubectl", "describe", "pod", pod, "-n", namespace])
 
