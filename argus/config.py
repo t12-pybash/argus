@@ -8,7 +8,7 @@ DEFAULTS = {
     "loki_url": "https://loki.your-cluster.example",
     "ollama_url": "https://litellm.your-cluster.example",
     "ollama_model": "llama3.1:8b",
-    "diagnose_model": "mistral-nemo",
+    "diagnose_model": "llama3.1:8b",
     "ollama_api_key": "",
     "vault_path": str(Path.home() / "Documents/obsidian-vault"),
     "qdrant_url": "https://qdrant.your-cluster.example",

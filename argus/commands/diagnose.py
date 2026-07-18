@@ -8,7 +8,7 @@ from rich.markdown import Markdown
 from rich.panel import Panel
 from rich import box
 
-from argus.clients.kubernetes import pod_describe, pod_logs_previous, pod_events
+from argus.clients.kubernetes import pod_describe, pod_logs_previous, pod_events, pod_node, namespace_secrets
 from argus.clients.ollama import OllamaClient
 from argus import config as cfg_module
 
@@ -67,13 +67,17 @@ def diagnose(pod_ref: str, save: bool = False):
     console.print(f"\n[bold cyan]Diagnosing[/bold cyan] {namespace}/{pod}\n")
 
     with console.status("[cyan]Gathering pod data..."):
-        with ThreadPoolExecutor(max_workers=3) as executor:
+        with ThreadPoolExecutor(max_workers=5) as executor:
             f_describe = executor.submit(pod_describe, namespace, pod)
             f_logs = executor.submit(pod_logs_previous, namespace, pod, 50)
             f_events = executor.submit(pod_events, namespace, pod)
+            f_node = executor.submit(pod_node, namespace, pod)
+            f_secrets = executor.submit(namespace_secrets, namespace)
         describe = f_describe.result()
         logs = f_logs.result()
         events = f_events.result()
+        node = f_node.result()
+        secrets = f_secrets.result()
 
     if not describe:
         console.print(f"[red]Pod {namespace}/{pod} not found.[/red]")
@@ -119,6 +123,14 @@ def diagnose(pod_ref: str, save: bool = False):
             pass
 
     describe_trimmed = _truncate(describe, 80)
+
+    secrets_list = "\n".join(f"  {s['name']} ({s['type']})" for s in secrets) if secrets else "  (none)"
+    cluster_context = f"""--- Cluster context ---
+Node: {node or '(unknown)'}
+Secrets in {namespace}:
+{secrets_list}
+"""
+
     runbook_section = f"""--- Relevant runbooks from our vault ---
 {vault_context}
 
@@ -138,6 +150,7 @@ Pod: {namespace}/{pod}
 --- Recent events ---
 {events or "(none)"}
 
+{cluster_context}
 {runbook_section}Diagnose this specific pod using only the evidence above. Do not give generic Kubernetes advice.
 
 Relevant Kubernetes facts to apply when interpreting the evidence:
