@@ -60,6 +60,33 @@ def _validate_yaml(content: str) -> bool:
         return False
 
 
+def _deployment_name_from_yaml(yaml_content: str) -> str | None:
+    """Extract the first Deployment name from generated fix YAML."""
+    try:
+        for doc in yaml.safe_load_all(yaml_content):
+            if doc and doc.get("kind") == "Deployment":
+                return doc.get("metadata", {}).get("name")
+    except yaml.YAMLError:
+        pass
+    return None
+
+
+def _add_patch_to_kustomization(raw: str, patch_path: str, deployment_name: str) -> str:
+    """Insert a patches entry into an existing kustomization.yaml."""
+    try:
+        doc = yaml.safe_load(raw) or {}
+    except yaml.YAMLError:
+        return raw
+    patches = doc.setdefault("patches", [])
+    entry = {
+        "path": patch_path,
+        "target": {"group": "apps", "version": "v1", "kind": "Deployment", "name": deployment_name},
+    }
+    if entry not in patches:
+        patches.append(entry)
+    return yaml.dump(doc, default_flow_style=False, sort_keys=False, allow_unicode=True, width=200)
+
+
 def _post_fix_slack(cfg: dict, pod_ref: str, mr_url: str, mr_iid: int, yaml_content: str):
     """Post a Slack notification with the MR link and approve/reject buttons."""
     bot_token = cfg.get("slack_bot_token", "")
@@ -260,8 +287,13 @@ Output ONLY the YAML starting with ---"""
     gl = GitLabClient(cfg["gitlab_url"], cfg["gitlab_token"], cfg["gitlab_project_id"])
     ts = datetime.now().strftime("%Y%m%d-%H%M%S")
     branch = f"argus/fix/{ts}-{namespace}-{pod}"[:80]
-    file_path = f"patches/{ts}/{namespace}-{pod}-fix.yaml"
     target = cfg.get("gitlab_target_branch", "main")
+
+    apps_path = cfg.get("gitops_apps_path", "apps/prod")
+    deployment_name = _deployment_name_from_yaml(yaml_content)
+    fix_filename = f"{ts}-{deployment_name or pod}-fix.yaml"
+    file_path = f"{apps_path}/{namespace}/argus-fixes/{fix_filename}"
+    kustomization_path = f"{apps_path}/{namespace}/kustomization.yaml"
 
     mr_url = ""
     mr_iid = None
@@ -271,10 +303,22 @@ Output ONLY the YAML starting with ---"""
             gl.create_branch(branch, ref=target)
 
         with console.status("[cyan]Committing fix..."):
+            files = [{"file_path": file_path, "content": yaml_content, "action": "create"}]
+            if deployment_name:
+                kz_raw = gl.get_file(kustomization_path, ref=target)
+                if kz_raw:
+                    updated_kz = _add_patch_to_kustomization(
+                        kz_raw, f"argus-fixes/{fix_filename}", deployment_name
+                    )
+                    files.append({
+                        "file_path": kustomization_path,
+                        "content": updated_kz,
+                        "action": "update",
+                    })
             gl.commit_files(
                 branch=branch,
                 message=f"fix(argus): remediate {namespace}/{pod}",
-                files=[{"file_path": file_path, "content": yaml_content, "action": "create"}],
+                files=files,
             )
 
         with console.status("[cyan]Opening MR..."):
