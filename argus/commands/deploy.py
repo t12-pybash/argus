@@ -59,7 +59,7 @@ def _clean_yaml(content: str) -> str:
     """Strip markdown code fences and trailing prose from extracted YAML."""
     # Remove ```yaml, ```yml, ``` lines
     lines = content.splitlines()
-    cleaned = [l for l in lines if not l.strip().startswith("```")]
+    cleaned = [line for line in lines if not line.strip().startswith("```")]
     text = "\n".join(cleaned).strip()
     # Truncate at first line of prose after YAML ends (non-YAML lines after last key: value)
     yaml_end = len(text)
