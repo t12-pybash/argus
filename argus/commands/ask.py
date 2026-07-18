@@ -116,7 +116,8 @@ Question: {question}
 Answer concisely and practically."""
 
     console.print("[dim cyan]▶[/dim cyan] ", end="")
-    import sys; sys.stdout.flush()
+    import sys
+    sys.stdout.flush()
     full = ""
     try:
         for token in ollama.stream(prompt):
