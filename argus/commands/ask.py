@@ -93,17 +93,18 @@ def ask(question: str):
 
     tasks = [_nodes, _alerts, _restarts, _cpu, _mem, _disk, _pods_and_problems, _pvcs, _deployments, _flux]
 
-    with ThreadPoolExecutor(max_workers=len(tasks)) as executor:
-        futures = [executor.submit(t) for t in tasks]
+    with console.status("[cyan]Gathering cluster context…"):
+        with ThreadPoolExecutor(max_workers=len(tasks)) as executor:
+            futures = [executor.submit(t) for t in tasks]
 
-    context_parts = []
-    for f in futures:
-        try:
-            result = f.result()
-            if result:
-                context_parts.append(result)
-        except Exception:
-            pass
+        context_parts = []
+        for f in futures:
+            try:
+                result = f.result()
+                if result:
+                    context_parts.append(result)
+            except Exception:
+                pass
 
     context = "\n\n".join(context_parts)
     prompt = f"""You are an SRE assistant for a homelab Kubernetes cluster running on kubeadm.
@@ -114,7 +115,8 @@ Question: {question}
 
 Answer concisely and practically."""
 
-    console.print("[dim cyan]→[/dim cyan] ", end="")
+    console.print("[dim cyan]▶[/dim cyan] ", end="")
+    import sys; sys.stdout.flush()
     full = ""
     try:
         for token in ollama.stream(prompt):

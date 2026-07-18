@@ -55,9 +55,27 @@ resources:
 _SECTION_RE = re.compile(r"---\s+(\S+\.yaml)\s+---\s*\n(.*?)(?=\n---\s+\S+\.yaml\s+---|$)", re.DOTALL)
 
 
+def _clean_yaml(content: str) -> str:
+    """Strip markdown code fences and trailing prose from extracted YAML."""
+    # Remove ```yaml, ```yml, ``` lines
+    lines = content.splitlines()
+    cleaned = [l for l in lines if not l.strip().startswith("```")]
+    text = "\n".join(cleaned).strip()
+    # Truncate at first line of prose after YAML ends (non-YAML lines after last key: value)
+    yaml_end = len(text)
+    for i, line in enumerate(text.splitlines()):
+        stripped = line.strip()
+        if stripped and not stripped.startswith("#") and not stripped.startswith("-") \
+                and not stripped.startswith("apiVersion") and ":" not in stripped \
+                and not stripped.startswith("---") and len(stripped) > 40:
+            yaml_end = len("\n".join(text.splitlines()[:i]))
+            break
+    return text[:yaml_end].strip()
+
+
 def _parse_sections(text: str) -> dict[str, str]:
     """Parse LLM output into {filename: content} dict."""
-    return {m.group(1): m.group(2).strip() for m in _SECTION_RE.finditer(text)}
+    return {m.group(1): _clean_yaml(m.group(2)) for m in _SECTION_RE.finditer(text)}
 
 
 def _extract_yaml_blocks(text: str) -> dict[str, str]:
@@ -82,14 +100,6 @@ def _slugify(text: str) -> str:
 
 def deploy(intent: str, dry_run: bool = False):
     cfg = cfg_module.load()
-
-    if not cfg.get("gitlab_token"):
-        console.print("[red]gitlab_token not configured — set it in config.toml or ARGUS_GITLAB_TOKEN env var.[/red]")
-        return
-
-    if not cfg.get("gitlab_project_id"):
-        console.print("[red]gitlab_project_id not configured — set it in config.toml or ARGUS_GITLAB_PROJECT_ID env var.[/red]")
-        return
 
     console.print(f"\n[bold cyan]Generating deployment manifests for:[/bold cyan] {intent}\n")
 
@@ -126,6 +136,7 @@ Rules:
 - Follow the --- filename.yaml --- section format exactly
 - Every manifest must include apiVersion, kind, metadata.name, metadata.namespace
 - Use realistic chart versions (>=X.Y.Z <(X+1).0.0 semver ranges)
+- chart.spec.chart must be the bare chart name with no prefix (e.g. "redis" not "bitnami/redis" not "bitnami-redis") — the repo is specified by sourceRef, never include the repo name in the chart field
 - HelmRepository sourceRef must point to a real public Helm repo (bitnami, prometheus-community, etc.)
 - Do not include comments or explanation outside the YAML blocks"""
 
@@ -164,6 +175,14 @@ Rules:
 
     if dry_run:
         console.print("\n[dim]--dry-run: GitLab MR not created.[/dim]")
+        return
+
+    if not cfg.get("gitlab_token"):
+        console.print("[red]gitlab_token not configured — set it in config.toml or ARGUS_GITLAB_TOKEN env var.[/red]")
+        return
+
+    if not cfg.get("gitlab_project_id"):
+        console.print("[red]gitlab_project_id not configured — set it in config.toml or ARGUS_GITLAB_PROJECT_ID env var.[/red]")
         return
 
     # Infer service name from namespace.yaml if possible

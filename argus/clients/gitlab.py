@@ -74,6 +74,20 @@ class GitLabClient:
         resp.raise_for_status()
         return resp.json()
 
+    def get_file(self, file_path: str, ref: str = "main") -> str | None:
+        """Return file content as string, or None if the file doesn't exist."""
+        resp = httpx.get(
+            self._url(f"/repository/files/{urllib.parse.quote(file_path, safe='')}"),
+            headers=self._headers,
+            params={"ref": ref},
+            timeout=15,
+        )
+        if resp.status_code == 404:
+            return None
+        resp.raise_for_status()
+        import base64
+        return base64.b64decode(resp.json()["content"]).decode()
+
     def get_mr(self, iid: int) -> dict:
         resp = httpx.get(
             self._url(f"/merge_requests/{iid}"),
