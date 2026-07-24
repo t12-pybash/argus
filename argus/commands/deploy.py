@@ -13,7 +13,6 @@ from argus import config as cfg_module
 console = Console()
 
 
-# Few-shot example showing the manifest structure used in this cluster
 _EXAMPLE_MANIFESTS = """
 --- namespace.yaml ---
 apiVersion: v1
@@ -52,7 +51,8 @@ resources:
   - helmrelease.yaml
 """
 
-_SECTION_RE = re.compile(r"---\s+(\S+\.yaml)\s+---\s*\n(.*?)(?=\n---\s+\S+\.yaml\s+---|$)", re.DOTALL)
+_SECTION_RE = re.compile(r"---\s+(\S+\.yaml)\s+---\s*\n(.*?)(?=\n---\s+\S+\.yaml\s+---|---\s+patches\s+---|$)", re.DOTALL)
+_PATCHES_RE = re.compile(r"---\s+patches\s+---\s*\n(.*?)(?=\n---\s+\S+|$)", re.DOTALL)
 
 
 def _add_resource_to_kustomization(raw: str, service_name: str) -> str:
@@ -68,12 +68,9 @@ def _add_resource_to_kustomization(raw: str, service_name: str) -> str:
 
 
 def _clean_yaml(content: str) -> str:
-    """Strip markdown code fences and trailing prose from extracted YAML."""
-    # Remove ```yaml, ```yml, ``` lines
     lines = content.splitlines()
     cleaned = [line for line in lines if not line.strip().startswith("```")]
     text = "\n".join(cleaned).strip()
-    # Truncate at first line of prose after YAML ends (non-YAML lines after last key: value)
     yaml_end = len(text)
     for i, line in enumerate(text.splitlines()):
         stripped = line.strip()
@@ -86,16 +83,27 @@ def _clean_yaml(content: str) -> str:
 
 
 def _parse_sections(text: str) -> dict[str, str]:
-    """Parse LLM output into {filename: content} dict."""
     return {m.group(1): _clean_yaml(m.group(2)) for m in _SECTION_RE.finditer(text)}
 
 
 def _extract_yaml_blocks(text: str) -> dict[str, str]:
-    """Fallback: extract ```yaml ... ``` fenced blocks labelled with a filename comment."""
     result = {}
     for m in re.finditer(r"#\s*(\S+\.yaml)\s*\n```(?:yaml)?\s*\n(.*?)```", text, re.DOTALL):
         result[m.group(1)] = m.group(2).strip()
     return result
+
+
+def _parse_patches(text: str) -> list[dict]:
+    m = _PATCHES_RE.search(text)
+    if not m:
+        return []
+    try:
+        result = yaml.safe_load(m.group(1).strip())
+        if isinstance(result, list):
+            return [p for p in result if isinstance(p, dict) and "file" in p and "change" in p]
+    except yaml.YAMLError:
+        pass
+    return []
 
 
 def _validate_yaml(content: str) -> bool:
@@ -108,6 +116,28 @@ def _validate_yaml(content: str) -> bool:
 
 def _slugify(text: str) -> str:
     return re.sub(r"[^a-z0-9-]", "-", text.lower().strip())[:40].strip("-")
+
+
+def _apply_patch(ollama: OllamaClient, file_path: str, existing_content: str, change: str) -> str | None:
+    prompt = f"""You are a Kubernetes platform engineer.
+
+Here is the current content of {file_path}:
+
+{existing_content}
+
+Apply exactly this change and output the complete updated file with no other modifications:
+
+{change}
+
+Rules:
+- Output ONLY valid Kubernetes YAML
+- Do not include comments, explanation, or markdown fences
+- Preserve all existing fields not mentioned in the change"""
+
+    raw = ollama.ask(prompt)
+    raw = re.sub(r"<think>.*?</think>", "", raw, flags=re.DOTALL).strip()
+    raw = "\n".join(line for line in raw.splitlines() if not line.strip().startswith("```")).strip()
+    return raw if _validate_yaml(raw) else None
 
 
 def deploy(intent: str, dry_run: bool = False):
@@ -143,6 +173,18 @@ Generate exactly these three files for the requested deployment:
 --- kustomization.yaml ---
 [kustomization manifest]
 
+If the request implies that an existing service needs to be reconfigured to use the new deployment
+(for example, enabling a cache, changing a backend URL, or pointing to a new service), also output
+a patches section listing each existing file that needs updating and what change to make:
+
+--- patches ---
+- file: apps/prod/<namespace>/<filename>.yaml
+  change: |
+    <precise description of what to add or change, including the exact YAML snippet>
+
+Only include the patches section if cross-service changes are actually needed.
+Omit it entirely if this is a standalone deployment.
+
 Rules:
 - Output ONLY valid Kubernetes YAML
 - Follow the --- filename.yaml --- section format exactly
@@ -150,7 +192,21 @@ Rules:
 - Use realistic chart versions (>=X.Y.Z <(X+1).0.0 semver ranges)
 - chart.spec.chart must be the bare chart name with no prefix (e.g. "redis" not "bitnami/redis" not "bitnami-redis") — the repo is specified by sourceRef, never include the repo name in the chart field
 - HelmRepository sourceRef must point to a real public Helm repo (bitnami, prometheus-community, etc.)
-- Do not include comments or explanation outside the YAML blocks"""
+- Do not include comments or explanation outside the YAML blocks and patches section"""
+
+    # Fetch existing file tree so the LLM can reference real paths for cross-service patches
+    file_tree_snippet = ""
+    if cfg.get("gitlab_token") and cfg.get("gitlab_project_id"):
+        try:
+            _gl_pre = GitLabClient(cfg["gitlab_url"], cfg["gitlab_token"], cfg["gitlab_project_id"])
+            _target_pre = cfg.get("gitlab_target_branch", "main")
+            _files = _gl_pre.list_files("apps/prod", ref=_target_pre)
+            if _files:
+                file_tree_snippet = "\n\nExisting files in apps/prod (use exact paths when referencing files to patch):\n" + "\n".join(f"  {f}" for f in _files)
+        except Exception:
+            pass
+
+    prompt += file_tree_snippet
 
     model = cfg.get("diagnose_model", "mistral-nemo")
     ollama = OllamaClient(cfg["ollama_url"], model, cfg.get("ollama_api_key", ""))
@@ -158,7 +214,6 @@ Rules:
     console.print(f"[dim]Generating manifests with {model}…[/dim]")
     raw = ollama.ask(prompt)
 
-    # Strip <think> blocks
     raw = re.sub(r"<think>.*?</think>", "", raw, flags=re.DOTALL).strip()
 
     files = _parse_sections(raw)
@@ -170,7 +225,8 @@ Rules:
         console.print(Panel(raw, title="[yellow]Raw LLM output[/yellow]", box=box.ROUNDED))
         return
 
-    # Validate each file
+    patches = _parse_patches(raw)
+
     valid = True
     for fname, content in files.items():
         if not _validate_yaml(content):
@@ -185,6 +241,12 @@ Rules:
     for fname, content in files.items():
         console.print(Panel(content, title=f"[green]{fname}[/green]", box=box.ROUNDED, expand=False))
 
+    if patches:
+        console.print(f"\n[bold cyan]Cross-service patches planned:[/bold cyan]")
+        for p in patches:
+            console.print(f"  [dim]→[/dim] [cyan]{p['file']}[/cyan]")
+            console.print(f"    {p['change'].strip().splitlines()[0]}")
+
     if dry_run:
         console.print("\n[dim]--dry-run: GitLab MR not created.[/dim]")
         return
@@ -197,7 +259,6 @@ Rules:
         console.print("[red]gitlab_project_id not configured — set it in config.toml or ARGUS_GITLAB_PROJECT_ID env var.[/red]")
         return
 
-    # Infer service name from namespace.yaml if possible
     service_name = "service"
     if "namespace.yaml" in files:
         try:
@@ -234,6 +295,26 @@ Rules:
             "action": "update",
         })
 
+    # Apply cross-service patches
+    patched_files = []
+    if patches:
+        with console.status("[cyan]Applying cross-service patches…"):
+            for p in patches:
+                existing = gl.get_file(p["file"], ref=target)
+                if not existing:
+                    console.print(f"[yellow]⚠ Could not read {p['file']} — skipping patch[/yellow]")
+                    continue
+                updated = _apply_patch(ollama, p["file"], existing, p["change"])
+                if updated:
+                    commit_files.append({
+                        "file_path": p["file"],
+                        "content": updated,
+                        "action": "update",
+                    })
+                    patched_files.append(p["file"])
+                else:
+                    console.print(f"[yellow]⚠ Patch for {p['file']} produced invalid YAML — skipping[/yellow]")
+
     mr_description = (
         f"Auto-generated by `argus deploy \"{intent}\"`\n\n"
         f"**Service:** `{service_name}`\n"
@@ -241,6 +322,7 @@ Rules:
         f"**Files created:**\n"
         + "".join(f"- `{base_path}/{f}`\n" for f in files)
         + (f"\n- `{parent_kz_path}` (updated)" if parent_kz_raw else f"\n> ⚠️ Could not read `{parent_kz_path}` — add `- {service_name}/` manually")
+        + ("\n\n**Cross-service patches:**\n" + "".join(f"- `{f}`\n" for f in patched_files) if patched_files else "")
     )
 
     try:
