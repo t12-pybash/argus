@@ -88,6 +88,29 @@ class GitLabClient:
         import base64
         return base64.b64decode(resp.json()["content"]).decode()
 
+    def list_files(self, path: str = "", ref: str = "main", recursive: bool = True) -> list[str]:
+        """Return list of file paths under the given directory."""
+        results = []
+        page = 1
+        while True:
+            resp = httpx.get(
+                self._url("/repository/tree"),
+                headers=self._headers,
+                params={"path": path, "ref": ref, "recursive": recursive, "per_page": 100, "page": page},
+                timeout=15,
+            )
+            if resp.status_code == 404:
+                return []
+            resp.raise_for_status()
+            items = resp.json()
+            if not items:
+                break
+            results.extend(item["path"] for item in items if item["type"] == "blob")
+            if len(items) < 100:
+                break
+            page += 1
+        return results
+
     def get_mr(self, iid: int) -> dict:
         resp = httpx.get(
             self._url(f"/merge_requests/{iid}"),
