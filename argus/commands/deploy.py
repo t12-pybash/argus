@@ -42,17 +42,9 @@ def _post_deploy_slack(cfg: dict, intent: str, service_name: str, mr_url: str, m
             "elements": [
                 {
                     "type": "button",
-                    "text": {"type": "plain_text", "text": "✅ Approve & Merge", "emoji": True},
+                    "text": {"type": "plain_text", "text": "Review MR →", "emoji": True},
                     "style": "primary",
-                    "action_id": "approve",
-                    "value": "approve",
-                },
-                {
-                    "type": "button",
-                    "text": {"type": "plain_text", "text": "❌ Reject", "emoji": True},
-                    "style": "danger",
-                    "action_id": "reject",
-                    "value": "reject",
+                    "url": mr_url,
                 },
             ],
         },
