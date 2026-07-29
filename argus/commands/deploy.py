@@ -13,7 +13,7 @@ from argus import config as cfg_module
 console = Console()
 
 
-_EXAMPLE_MANIFESTS = """
+_EXAMPLE_HELMRELEASE = """
 --- namespace.yaml ---
 apiVersion: v1
 kind: Namespace
@@ -49,6 +49,79 @@ kind: Kustomization
 resources:
   - namespace.yaml
   - helmrelease.yaml
+"""
+
+_EXAMPLE_DEPLOYMENT = """
+--- namespace.yaml ---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: whoami
+
+--- deployment.yaml ---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: whoami
+  namespace: whoami
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: whoami
+  template:
+    metadata:
+      labels:
+        app: whoami
+    spec:
+      containers:
+        - name: whoami
+          image: traefik/whoami:latest
+          ports:
+            - containerPort: 80
+          resources:
+            requests:
+              cpu: 50m
+              memory: 32Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: whoami
+  namespace: whoami
+spec:
+  selector:
+    app: whoami
+  ports:
+    - port: 80
+      targetPort: 80
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: whoami
+  namespace: whoami
+spec:
+  parentRefs:
+    - name: cilium-gateway
+      namespace: kube-system
+  hostnames:
+    - whoami.home.t12.io
+  rules:
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /
+      backendRefs:
+        - name: whoami
+          port: 80
+
+--- kustomization.yaml ---
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - namespace.yaml
+  - deployment.yaml
 """
 
 _SECTION_RE = re.compile(r"---\s+(\S+\.yaml)\s+---\s*\n(.*?)(?=\n---\s+\S+\.yaml\s+---|---\s+patches\s+---|$)", re.DOTALL)
@@ -145,6 +218,10 @@ def deploy(intent: str, dry_run: bool = False):
 
     console.print(f"\n[bold cyan]Generating deployment manifests for:[/bold cyan] {intent}\n")
 
+    intent_lower = intent.lower()
+    _wants_raw = any(w in intent_lower for w in ["deployment", "httproute", "service", "raw manifest", "not helmrelease", "no helmrelease"])
+    _example = _EXAMPLE_DEPLOYMENT if _wants_raw else _EXAMPLE_HELMRELEASE
+
     prompt = f"""You are a Kubernetes platform engineer using Flux CD for GitOps.
 
 Generate deployment manifests for the following request:
@@ -155,23 +232,24 @@ Cluster conventions:
 - GitOps tool: Flux CD v2 (HelmRelease, Kustomization)
 - Every app gets a dedicated namespace
 - HelmRepository sources are in the flux-system namespace
-- Use HelmRelease for anything with a public Helm chart; use Deployment + Service for custom images
+- Use HelmRelease ONLY for well-known stateful services with production Helm charts (redis, postgres, mysql, elasticsearch, grafana). Use Deployment + Service + HTTPRoute for everything else — simple services, test apps, or when the request mentions Deployment, HTTPRoute, or a container image directly.
+- Gateway API is Cilium: parentRef name=cilium-gateway namespace=kube-system; domain suffix is home.t12.io
 - Persistent storage uses default StorageClass (leave storageClass: "" or omit it)
-- Resource requests: cpu 100m–500m, memory 128Mi–512Mi for small services
+- Resource requests: cpu 50m–500m, memory 32Mi–512Mi depending on service size
 
-Reference example (use this exact structure):
-{_EXAMPLE_MANIFESTS}
+Reference example (follow this exact pattern):
+{_example}
 
-Generate exactly these three files for the requested deployment:
+Generate exactly these files for the requested deployment — name each file after what it contains (deployment.yaml, helmrelease.yaml, etc.):
 
 --- namespace.yaml ---
 [namespace manifest]
 
---- helmrelease.yaml ---
-[helmrelease or deployment + service manifest]
+--- deployment.yaml OR helmrelease.yaml ---
+[workload manifest — Deployment+Service+HTTPRoute for simple services, HelmRelease for stateful infra]
 
 --- kustomization.yaml ---
-[kustomization manifest]
+[kustomization manifest listing all generated files]
 
 If the request implies that an existing service needs to be reconfigured to use the new deployment
 (for example, enabling a cache, changing a backend URL, or pointing to a new service), also output
