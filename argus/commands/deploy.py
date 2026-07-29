@@ -1,5 +1,6 @@
 import re
 import yaml
+import httpx
 from datetime import datetime
 
 from rich.console import Console
@@ -11,6 +12,66 @@ from argus.clients.gitlab import GitLabClient
 from argus import config as cfg_module
 
 console = Console()
+
+
+def _post_deploy_slack(cfg: dict, intent: str, service_name: str, mr_url: str, mr_iid: int):
+    bot_token = cfg.get("slack_bot_token", "")
+    webhook_url = cfg.get("agent_webhook_url", "")
+    if not bot_token and not webhook_url:
+        return
+
+    blocks = [
+        {
+            "type": "header",
+            "text": {"type": "plain_text", "text": "🚀 Argus deploy: GitOps MR opened", "emoji": True},
+        },
+        {
+            "type": "section",
+            "fields": [
+                {"type": "mrkdwn", "text": f"*Service:*\n`{service_name}`"},
+                {"type": "mrkdwn", "text": f"*MR:*\n<{mr_url}|!{mr_iid} — review manifests →>"},
+            ],
+        },
+        {
+            "type": "section",
+            "text": {"type": "mrkdwn", "text": f"*Intent:*\n_{intent}_"},
+        },
+        {"type": "divider"},
+        {
+            "type": "actions",
+            "elements": [
+                {
+                    "type": "button",
+                    "text": {"type": "plain_text", "text": "✅ Approve & Merge", "emoji": True},
+                    "style": "primary",
+                    "action_id": "approve",
+                    "value": "approve",
+                },
+                {
+                    "type": "button",
+                    "text": {"type": "plain_text", "text": "❌ Reject", "emoji": True},
+                    "style": "danger",
+                    "action_id": "reject",
+                    "value": "reject",
+                },
+            ],
+        },
+    ]
+
+    if bot_token:
+        try:
+            from slack_sdk import WebClient
+            channel = cfg.get("slack_channel", "#homelab-alerts")
+            WebClient(token=bot_token).chat_postMessage(channel=channel, blocks=blocks)
+            return
+        except Exception as e:
+            console.print(f"[yellow]⚠ Slack notification failed: {e}[/yellow]")
+
+    if webhook_url and "hooks.slack.com" in webhook_url:
+        try:
+            httpx.post(webhook_url, json={"blocks": blocks}, timeout=10)
+        except Exception as e:
+            console.print(f"[yellow]⚠ Slack webhook failed: {e}[/yellow]")
 
 
 _EXAMPLE_HELMRELEASE = """
@@ -424,6 +485,7 @@ Rules:
 
         console.print(f"\n[bold green]✓ MR opened:[/bold green] {mr['web_url']}")
         console.print(f"[dim]Branch: {branch}[/dim]")
+        _post_deploy_slack(cfg, intent, service_name, mr["web_url"], mr["iid"])
 
     except Exception as e:
         console.print(f"[red]GitLab error: {e}[/red]")
