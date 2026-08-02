@@ -70,11 +70,12 @@ def deploy(
 
 @app.command()
 def diagnose(
-    pod: str = typer.Argument(..., help="Pod reference as namespace/pod-name"),
+    pod: str = typer.Argument(..., help="Pod reference as namespace/pod-name or just pod-name"),
+    namespace: str = typer.Option(None, "--namespace", "-n", help="Kubernetes namespace (overrides namespace/pod-name format)"),
     save: bool = typer.Option(False, "--save", "-s", help="Save diagnosis as runbook to vault"),
 ):
     """Diagnose a crashing pod: fetches logs, events, describe and gets LLM root cause analysis."""
-    _diagnose(pod, save=save)
+    _diagnose(pod, namespace=namespace, save=save)
 
 
 @agent_app.command("start")

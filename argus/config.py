@@ -24,6 +24,7 @@ DEFAULTS = {
     "slack_bot_token": "",
     "slack_app_token": "",
     "slack_channel": "#homelab-alerts",
+    "agent_mr_channel": "#pull-and-merge-requests",
     "gitlab_url": "https://gitlab.com",
     "gitlab_token": "",
     "gitlab_project_id": "",

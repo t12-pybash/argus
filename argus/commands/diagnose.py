@@ -58,8 +58,10 @@ def _save_runbook(vault_path: Path, namespace: str, pod: str, analysis: str):
     return path
 
 
-def diagnose(pod_ref: str, save: bool = False):
-    if "/" in pod_ref:
+def diagnose(pod_ref: str, namespace: str = None, save: bool = False):
+    if namespace:
+        pod = pod_ref
+    elif "/" in pod_ref:
         namespace, pod = pod_ref.split("/", 1)
     else:
         namespace, pod = "default", pod_ref
