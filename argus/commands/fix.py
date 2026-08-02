@@ -304,18 +304,46 @@ Output ONLY the YAML starting with ---"""
             gl.create_branch(branch, ref=target)
 
         with console.status("[cyan]Committing fix..."):
-            files = [{"file_path": file_path, "content": yaml_content, "action": "create"}]
-            if deployment_name:
-                kz_raw = gl.get_file(kustomization_path, ref=target)
-                if kz_raw:
-                    updated_kz = _add_patch_to_kustomization(
-                        kz_raw, f"argus-fixes/{fix_filename}", deployment_name
-                    )
-                    files.append({
-                        "file_path": kustomization_path,
-                        "content": updated_kz,
-                        "action": "update",
-                    })
+            # Split multi-kind YAML: ConfigMaps become resources, Deployments become patches
+            try:
+                all_docs = [d for d in yaml.safe_load_all(yaml_content) if d]
+            except yaml.YAMLError:
+                all_docs = []
+            configmap_docs = [d for d in all_docs if d.get("kind") == "ConfigMap"]
+            deploy_only = "\n---\n".join(
+                yaml.dump(d, default_flow_style=False, allow_unicode=True, sort_keys=False, width=200)
+                for d in all_docs if d.get("kind") == "Deployment"
+            ) or yaml_content
+
+            files = [{"file_path": file_path, "content": deploy_only, "action": "create"}]
+            kz_raw = gl.get_file(kustomization_path, ref=target)
+            updated_kz = kz_raw or ""
+
+            for cm in configmap_docs:
+                cm_name = cm.get("metadata", {}).get("name", "config")
+                cm_rel = f"argus-fixes/{ts}-{cm_name}.yaml"
+                cm_repo_path = f"{apps_path}/{cm_rel}"
+                files.append({
+                    "file_path": cm_repo_path,
+                    "content": yaml.dump(cm, default_flow_style=False, allow_unicode=True, sort_keys=False),
+                    "action": "create",
+                })
+                if updated_kz:
+                    try:
+                        kz_doc = yaml.safe_load(updated_kz) or {}
+                    except yaml.YAMLError:
+                        kz_doc = {}
+                    res_list = kz_doc.setdefault("resources", [])
+                    if cm_rel not in res_list:
+                        res_list.append(cm_rel)
+                    updated_kz = yaml.dump(kz_doc, default_flow_style=False, sort_keys=False, allow_unicode=True, width=200)
+
+            if deployment_name and updated_kz:
+                updated_kz = _add_patch_to_kustomization(updated_kz, f"argus-fixes/{fix_filename}", deployment_name)
+
+            if updated_kz and updated_kz != kz_raw:
+                files.append({"file_path": kustomization_path, "content": updated_kz, "action": "update"})
+
             gl.commit_files(
                 branch=branch,
                 message=f"fix(argus): remediate {namespace}/{pod}",
