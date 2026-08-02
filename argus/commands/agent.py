@@ -570,6 +570,7 @@ Be direct and specific. Commands only, no background theory."""
     mr_url = ""
     if pod_ref and cfg.get("gitlab_token") and cfg.get("gitlab_project_id"):
         console.print("[cyan]Generating GitOps fix patch...[/cyan]")
+        time.sleep(10)  # let pod accumulate crash events before fix reads them
         try:
             from argus.commands.fix import fix as _gitops_fix
             fix_result = _gitops_fix(pod_ref, notify_slack=False)
