@@ -50,20 +50,14 @@ def _post_deploy_slack(cfg: dict, intent: str, service_name: str, mr_url: str, m
         },
     ]
 
-    if bot_token:
-        try:
-            from slack_sdk import WebClient
-            channel = cfg.get("slack_channel", "#homelab-alerts")
-            WebClient(token=bot_token).chat_postMessage(channel=channel, blocks=blocks)
-            return
-        except Exception as e:
-            console.print(f"[yellow]⚠ Slack notification failed: {e}[/yellow]")
-
-    if webhook_url and "hooks.slack.com" in webhook_url:
-        try:
-            httpx.post(webhook_url, json={"blocks": blocks}, timeout=10)
-        except Exception as e:
-            console.print(f"[yellow]⚠ Slack webhook failed: {e}[/yellow]")
+    if not bot_token:
+        return
+    try:
+        from slack_sdk import WebClient
+        channel = cfg.get("agent_mr_channel", "#pull-and-merge-requests")
+        WebClient(token=bot_token).chat_postMessage(channel=channel, blocks=blocks, text="Argus deploy: GitOps MR opened")
+    except Exception as e:
+        console.print(f"[yellow]⚠ Slack notification failed: {e}[/yellow]")
 
 
 _EXAMPLE_HELMRELEASE = """
@@ -156,7 +150,7 @@ metadata:
   namespace: whoami
 spec:
   parentRefs:
-    - name: cilium-gateway
+    - name: homelab-gw
       namespace: kube-system
   hostnames:
     - whoami.home.t12.io
@@ -191,6 +185,20 @@ def _add_resource_to_kustomization(raw: str, service_name: str) -> str:
     if entry not in resources:
         resources.append(entry)
     return yaml.dump(doc, default_flow_style=False, sort_keys=False, allow_unicode=True, width=200)
+
+
+def _merge_kustomization(existing_raw: str, new_raw: str) -> str:
+    """Merge resources from new kustomization into existing, avoiding duplicates."""
+    try:
+        existing = yaml.safe_load(existing_raw) or {}
+        new = yaml.safe_load(new_raw) or {}
+    except yaml.YAMLError:
+        return existing_raw
+    existing_resources = existing.setdefault("resources", [])
+    for r in new.get("resources", []):
+        if r not in existing_resources:
+            existing_resources.append(r)
+    return yaml.dump(existing, default_flow_style=False, sort_keys=False, allow_unicode=True, width=200)
 
 
 def _clean_yaml(content: str) -> str:
@@ -286,7 +294,7 @@ Cluster conventions:
 - Every app gets a dedicated namespace
 - HelmRepository sources are in the flux-system namespace
 - Use HelmRelease ONLY for well-known stateful services with production Helm charts (redis, postgres, mysql, elasticsearch, grafana). Use Deployment + Service + HTTPRoute for everything else — simple services, test apps, or when the request mentions Deployment, HTTPRoute, or a container image directly.
-- Gateway API is Cilium: parentRef name=cilium-gateway namespace=kube-system; domain suffix is home.t12.io
+- Gateway API is Cilium: parentRef name=homelab-gw namespace=kube-system; domain suffix is home.t12.io
 - Persistent storage uses default StorageClass (leave storageClass: "" or omit it)
 - Resource requests: cpu 50m–500m, memory 32Mi–512Mi depending on service size
 
@@ -406,14 +414,17 @@ Rules:
     target = cfg.get("gitlab_target_branch", "main")
     base_path = f"apps/prod/{service_name}"
 
-    commit_files = [
-        {
-            "file_path": f"{base_path}/{fname}",
+    commit_files = []
+    for fname, content in files.items():
+        fpath = f"{base_path}/{fname}"
+        existing = gl.get_file(fpath, ref=target)
+        if existing and fname == "kustomization.yaml":
+            content = _merge_kustomization(existing, content)
+        commit_files.append({
+            "file_path": fpath,
             "content": content,
-            "action": "create",
-        }
-        for fname, content in files.items()
-    ]
+            "action": "update" if existing else "create",
+        })
 
     # Update apps/prod/kustomization.yaml to include the new service directory
     parent_kz_path = "apps/prod/kustomization.yaml"

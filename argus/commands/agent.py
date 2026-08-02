@@ -329,6 +329,9 @@ _ALERT_ACTION_OVERRIDES: dict[str, str] = {
     "PrometheusDuplicateTimestamps": "none",
     "CPUThrottlingHigh": "rollout_restart",
     "KubeDeploymentReplicasMismatch": "none",
+    "KubeProxyDown": "none",
+    "KubeNodeNotReady": "none",
+    "KubeNodeUnreachable": "none",
 }
 
 
@@ -458,6 +461,7 @@ def _process_alert(cfg: dict, alert: dict, auto: bool):
     alertname = labels.get("alertname", "Unknown")
     namespace = labels.get("namespace", "")
     pod = labels.get("pod", "")
+    job_name = labels.get("job_name", "")
     severity = labels.get("severity", "warning")
     summary = annotations.get("summary", "")
     pod_ref = f"{namespace}/{pod}" if namespace and pod else ""
@@ -551,6 +555,11 @@ Be direct and specific. Commands only, no background theory."""
     with console.status("[cyan]Picking remediation action..."):
         action_plan = _pick_action(ollama, alertname, severity, pod_ref, namespace, pod, diagnosis, summary)
 
+    # For job alerts, always use the label value — it's authoritative
+    if action_plan.get("action") in ("delete_failed_jobs",) and job_name:
+        action_plan["name"] = job_name
+        action_plan["namespace"] = namespace
+
     action_label = action_plan["action"]
     if action_plan.get("name") and action_label != "none":
         action_label += f" → {action_plan['name']}"
@@ -611,7 +620,7 @@ Be direct and specific. Commands only, no background theory."""
         _notify(cfg, "✅ SRE Agent: Auto-remediated", msg)
         PENDING_FILE.unlink(missing_ok=True)
     else:
-        approval_timeout = int(cfg.get("agent_approval_timeout", "300"))
+        approval_timeout = int(cfg.get("agent_approval_timeout", "60"))
         console.print(
             f"\nRun [cyan]argus agent approve[/cyan] to execute [bold]{action_label}[/bold] "
             f"or [red]argus agent reject[/red] to skip. "

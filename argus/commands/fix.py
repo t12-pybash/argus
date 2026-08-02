@@ -132,20 +132,14 @@ def _post_fix_slack(cfg: dict, pod_ref: str, mr_url: str, mr_iid: int, yaml_cont
         },
     ]
 
-    if bot_token:
-        try:
-            from slack_sdk import WebClient
-            channel = cfg.get("slack_channel", "#homelab-alerts")
-            WebClient(token=bot_token).chat_postMessage(channel=channel, blocks=blocks)
-            return
-        except Exception as e:
-            console.print(f"[yellow]⚠ Slack notification failed: {e}[/yellow]")
-
-    if webhook_url and "hooks.slack.com" in webhook_url:
-        try:
-            httpx.post(webhook_url, json={"blocks": blocks}, timeout=10)
-        except Exception as e:
-            console.print(f"[yellow]⚠ Slack webhook failed: {e}[/yellow]")
+    if not bot_token:
+        return
+    try:
+        from slack_sdk import WebClient
+        channel = cfg.get("agent_mr_channel", "#pull-and-merge-requests")
+        WebClient(token=bot_token).chat_postMessage(channel=channel, blocks=blocks, text="Argus fix: GitOps MR opened")
+    except Exception as e:
+        console.print(f"[yellow]⚠ Slack notification failed: {e}[/yellow]")
 
 
 def fix(pod_ref: str, dry_run: bool = False, notify_slack: bool = True):
@@ -289,7 +283,9 @@ Output ONLY the YAML starting with ---"""
     branch = f"argus/fix/{ts}-{namespace}-{pod}"[:80]
     target = cfg.get("gitlab_target_branch", "main")
 
-    apps_path = cfg.get("gitops_apps_path", "apps/prod")
+    _default_apps = cfg.get("gitops_apps_path", "apps/prod")
+    _ns_path = f"apps/{namespace}"
+    apps_path = _ns_path if gl.get_file(f"{_ns_path}/kustomization.yaml", ref=target) else _default_apps
     deployment_name = _deployment_name_from_yaml(yaml_content)
     fix_filename = f"{ts}-{deployment_name or pod}-fix.yaml"
     file_path = f"{apps_path}/{namespace}/argus-fixes/{fix_filename}"
