@@ -27,6 +27,11 @@ PATTERNS: list[Pattern] = [
         description="Pod evicted due to node resource pressure",
     ),
     Pattern(
+        name="MissingConfigFile",
+        keywords=["config file not found", "cannot open config", "no such file or directory /etc/app"],
+        description="Application cannot start — required config file missing from mount path",
+    ),
+    Pattern(
         name="CrashLoopBackOff",
         keywords=["crashloopbackoff", "back-off restarting failed container"],
         description="Container repeatedly crashing — needs log analysis to determine root cause",
@@ -54,6 +59,8 @@ def render(pattern: Pattern, namespace: str, pod: str, describe: str) -> str:
         return _fix_oom(namespace, deployment, describe)
     if pattern.name == "Evicted":
         return _fix_evicted(namespace, deployment)
+    if pattern.name == "MissingConfigFile":
+        return _fix_missing_config(namespace, deployment, describe)
     return ""
 
 
@@ -159,6 +166,46 @@ spec:
               memory: "{current}"
             limits:
               memory: "{new_limit}"
+"""
+
+
+def _fix_missing_config(namespace: str, deployment: str, describe: str) -> str:
+    container = _container_name(describe, deployment)
+    return f"""\
+# Pattern: MissingConfigFile
+# Root cause: Application cannot start — required config file not found at mount path.
+# Fix: Stabilisation patch — mounts a ConfigMap with stub config so the pod
+#      can start. Replace stub content with real config before next rollout.
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {deployment}-config
+  namespace: {namespace}
+data:
+  config.yaml: |
+    # Auto-generated stub — replace with real application config
+    app:
+      name: {deployment}
+      log_level: info
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {deployment}
+  namespace: {namespace}
+spec:
+  template:
+    spec:
+      containers:
+        - name: {container}
+          volumeMounts:
+            - name: app-config
+              mountPath: /etc/app
+      volumes:
+        - name: app-config
+          configMap:
+            name: {deployment}-config
 """
 
 
