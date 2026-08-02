@@ -285,11 +285,16 @@ Output ONLY the YAML starting with ---"""
 
     _default_apps = cfg.get("gitops_apps_path", "apps/prod")
     _ns_path = f"apps/{namespace}"
-    apps_path = _ns_path if gl.get_file(f"{_ns_path}/kustomization.yaml", ref=target) else _default_apps
+    _use_ns_path = bool(gl.get_file(f"{_ns_path}/kustomization.yaml", ref=target))
+    apps_path = _ns_path if _use_ns_path else _default_apps
     deployment_name = _deployment_name_from_yaml(yaml_content)
     fix_filename = f"{ts}-{deployment_name or pod}-fix.yaml"
-    file_path = f"{apps_path}/{namespace}/argus-fixes/{fix_filename}"
-    kustomization_path = f"{apps_path}/{namespace}/kustomization.yaml"
+    if _use_ns_path:
+        file_path = f"{apps_path}/argus-fixes/{fix_filename}"
+        kustomization_path = f"{apps_path}/kustomization.yaml"
+    else:
+        file_path = f"{apps_path}/{namespace}/argus-fixes/{fix_filename}"
+        kustomization_path = f"{apps_path}/{namespace}/kustomization.yaml"
 
     mr_url = ""
     mr_iid = None
