@@ -2,7 +2,7 @@
 
 Autonomous SRE agent for Kubernetes — sovereign, on-premises, no data leaves the cluster.
 
-Built by a Lead SRE with 14 years of production infrastructure experience. Argus combines live cluster observability, semantic search over a local knowledge base, LLM-powered diagnosis, and an autonomous remediation agent with human-in-the-loop control.
+Built by an SRE for SRE's. Argus combines live cluster observability, semantic search over a local knowledge base, LLM-powered diagnosis, and an autonomous remediation agent with human-in-the-loop control.
 
 Every competitor (Datadog Bits AI, Dynatrace Davis, PagerDuty AI) sends your operational data to an external cloud. Argus doesn't.
 
