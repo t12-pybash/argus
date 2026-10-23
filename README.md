@@ -139,10 +139,6 @@ claude mcp add argus -- argus-mcp
 - [Qdrant](https://qdrant.tech/) — vector database
 - [Ollama](https://ollama.ai/) / [LiteLLM](https://github.com/BerriAI/litellm) — local LLM inference
 
-## Related
-
-- [homelab-gitops](https://github.com/t12-pybash/homelab-gitops) — the cluster this operates (Flux, Cilium, private AI platform)
-
 ---
 
 *Ciarán Donegan — Lead SRE | [LinkedIn](https://www.linkedin.com/in/cdonegan7/) | [t-12.io](https://t-12.io)*
