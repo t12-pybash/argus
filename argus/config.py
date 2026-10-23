@@ -29,6 +29,7 @@ DEFAULTS = {
     "gitlab_token": "",
     "gitlab_project_id": "",
     "gitlab_target_branch": "main",
+    "domain_suffix": "your-cluster.example",
 }
 
 def load() -> dict:
