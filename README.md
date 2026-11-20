@@ -1,8 +1,10 @@
 # argus
 
-Autonomous SRE agent for Kubernetes. Sovereign, on-premises, no data leaves the cluster.
+[![CI](https://github.com/t12-pybash/argus/actions/workflows/ci.yml/badge.svg)](https://github.com/t12-pybash/argus/actions/workflows/ci.yml)
 
-Argus combines live cluster observability, semantic search over a local knowledge base, LLM-powered diagnosis, and an autonomous remediation agent with human-in-the-loop control.
+Autonomous SRE agent for Kubernetes — sovereign, on-premises, no data leaves the cluster.
+
+Built by a Lead SRE with 14 years of production infrastructure experience. Argus combines live cluster observability, semantic search over a local knowledge base, LLM-powered diagnosis, and an autonomous remediation agent with human-in-the-loop control.
 
 Every competitor (Datadog Bits AI, Dynatrace Davis, PagerDuty AI) sends your operational data to an external cloud. Argus doesn't.
 
@@ -138,6 +140,36 @@ claude mcp add argus -- argus-mcp
 - [httpx](https://www.python-httpx.org/) — HTTP client
 - [Qdrant](https://qdrant.tech/) — vector database
 - [Ollama](https://ollama.ai/) / [LiteLLM](https://github.com/BerriAI/litellm) — local LLM inference
+
+## Roadmap
+
+Current limitations and planned work:
+
+- **More deterministic patterns** — currently covers OOMKilled, ImagePullBackOff, Evicted, MissingConfigFile, CrashLoopBackOff; production coverage needs 20-30 patterns including network policy, certificate expiry, storage class, and DNS failures
+- **GitHub Actions support** — the fix/deploy loop is currently GitLab-only; GitHub support is the next integration target
+- **EKS validation** — tested on bare-metal Kubernetes; EKS testing is the immediate next step to validate against managed control planes and real AWS failure modes (node not ready, PVC binding, IRSA errors)
+- **Fix outcome tracking** — no feedback loop on whether a fix actually resolved the issue; remediation outcomes should feed back into the knowledge base
+- **Multi-cluster support** — currently single kubeconfig, single cluster
+
+Contributions welcome, especially on the GitHub integration and additional deterministic patterns.
+
+## Development
+
+```bash
+git clone https://github.com/t12-pybash/argus
+cd argus
+pip install -e ".[dev]"
+pytest
+```
+
+The test suite covers the core pattern router and YAML generation logic — no cluster required.
+
+## Contributing
+
+1. Fork the repo and create a branch
+2. Add or update tests for any logic changes
+3. Run `ruff check argus/` and `pytest` before opening a PR
+4. Conventional commit messages (`feat:`, `fix:`, `chore:`) — enforced by CI
 
 ---
 
