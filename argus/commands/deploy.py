@@ -1,6 +1,5 @@
 import re
 import yaml
-import httpx
 from datetime import datetime
 
 from rich.console import Console
@@ -381,7 +380,7 @@ Rules:
         console.print(Panel(content, title=f"[green]{fname}[/green]", box=box.ROUNDED, expand=False))
 
     if patches:
-        console.print(f"\n[bold cyan]Cross-service patches planned:[/bold cyan]")
+        console.print("\n[bold cyan]Cross-service patches planned:[/bold cyan]")
         for p in patches:
             console.print(f"  [dim]→[/dim] [cyan]{p['file']}[/cyan]")
             console.print(f"    {p['change'].strip().splitlines()[0]}")

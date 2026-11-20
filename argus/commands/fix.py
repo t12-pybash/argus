@@ -2,7 +2,6 @@ import re
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 
-import httpx
 import yaml
 from rich.console import Console
 from rich.panel import Panel

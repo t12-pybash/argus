@@ -566,7 +566,7 @@ Be direct and specific. Commands only, no background theory."""
     console.print(f"\n[bold yellow]Planned action:[/bold yellow] {action_label}")
 
     if action_label == "none" and not pod_ref:
-        console.print(f"[dim]Action: none — no automated remediation available, skipping notification[/dim]")
+        console.print("[dim]Action: none — no automated remediation available, skipping notification[/dim]")
         return
 
     # Wire: generate a GitOps patch MR for pod alerts when GitLab is configured
