@@ -20,6 +20,10 @@ dependencies = [
 argus = "argus.main:app"
 argus-mcp = "argus.mcp_server:mcp.run"
 
+[project.urls]
+Homepage = "https://github.com/t12-pybash/argus"
+Documentation = "https://t-12.io/solutions"
+
 [tool.hatch.build.targets.wheel]
 packages = ["argus"]
 
