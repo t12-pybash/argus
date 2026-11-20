@@ -32,7 +32,7 @@ rag = ["qdrant-client>=1.9"]
 agent = ["confluent-kafka>=2.3", "watchdog>=4.0", "slack-bolt>=1.18", "slack-sdk>=3.27"]
 mcp = ["mcp[cli]>=1.0"]
 all = ["argus-sre[rag,agent,mcp]"]
-dev = ["commitizen>=3.0", "ruff>=0.4"]
+dev = ["commitizen>=3.0", "ruff>=0.4", "pytest>=8.0", "pyyaml>=6.0"]
 
 [tool.commitizen]
 name = "cz_conventional_commits"
