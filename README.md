@@ -1,6 +1,6 @@
 # argus
 
-Autonomous SRE agent for Kubernetes — sovereign, on-premises, no data leaves the cluster.
+Autonomous SRE agent for Kubernetes. Sovereign, on-premises, no data leaves the cluster.
 
 Argus combines live cluster observability, semantic search over a local knowledge base, LLM-powered diagnosis, and an autonomous remediation agent with human-in-the-loop control.
 
