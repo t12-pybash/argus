@@ -361,7 +361,7 @@ Reply with ONLY a valid JSON object, no other text:
 {{
   "action": "<action from guide>",
   "namespace": "<namespace where the resource lives — for cordon_node/drain_node use empty string; may differ from the alert pod namespace>",
-  "name": "<resource name — for jobs: job name; for deployments: deployment name without pod hash suffix; for cordon_node/drain_node: actual node hostname e.g. cp1 wk4 NOT a pod name>",
+  "name": "<resource name — for jobs: job name; for deployments: deployment name without pod hash suffix; for cordon_node/drain_node: actual node hostname e.g. node1 worker2 NOT a pod name>",
   "replicas": 0,
   "size": "",
   "flux_kind": "",

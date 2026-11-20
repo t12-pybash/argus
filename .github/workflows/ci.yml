@@ -43,11 +43,22 @@ jobs:
       - run: pip install -e .
       - run: python -c "from argus.main import app; from argus.commands import agent, diagnose, incident; print('OK')"
 
+  test:
+    name: Unit Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: pip install -e ".[dev]"
+      - run: python -m pytest tests/ -v
+
   docker:
     name: Build & Push Image
     runs-on: ubuntu-latest
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    needs: [lint, smoke-test]
+    needs: [lint, smoke-test, test]
     permissions:
       contents: read
       packages: write

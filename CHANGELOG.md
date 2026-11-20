@@ -11,7 +11,7 @@
 - **diagnose**: RAG over Obsidian vault — search Qdrant for runbooks before LLM call
 - **diagnose**: use deepseek-r1:7b for root cause analysis, strip <think> blocks from output
 - **argus**: add 'argus model' command family (status, rollout, rollback)
-- **status**: add KServe InferenceService health to argus status
+- **status**: add model serving InferenceService health to argus status
 - expand agent remediation action space
 - rename package to argus, add agent command and CI/CD pipeline
 - direct Qdrant upsert on save — bypass vault sync pipeline

@@ -21,7 +21,7 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(mess
 log = logging.getLogger(__name__)
 
 TOPIC = "vault-changes"
-VAULT_REPO = "git@github.com:t12-pybash/obsidian-vault.git"
+VAULT_REPO = os.environ.get("VAULT_GIT_REPO", "")
 VAULT_DIR = Path("/vault")
 SHA_FILE = Path.home() / ".config" / "argus" / "last_sha"
 
