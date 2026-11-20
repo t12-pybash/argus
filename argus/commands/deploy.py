@@ -150,7 +150,7 @@ metadata:
   namespace: whoami
 spec:
   parentRefs:
-    - name: homelab-gw
+    - name: cluster-gw
       namespace: kube-system
   hostnames:
     - whoami.your-cluster.example
@@ -294,7 +294,7 @@ Cluster conventions:
 - Every app gets a dedicated namespace
 - HelmRepository sources are in the flux-system namespace
 - Use HelmRelease ONLY for well-known stateful services with production Helm charts (redis, postgres, mysql, elasticsearch, grafana). Use Deployment + Service + HTTPRoute for everything else — simple services, test apps, or when the request mentions Deployment, HTTPRoute, or a container image directly.
-- Gateway API is Cilium: parentRef name=homelab-gw namespace=kube-system; domain suffix is {cfg.get("domain_suffix", "your-cluster.example")}
+- Gateway API is Cilium: parentRef name=cluster-gw namespace=kube-system; domain suffix is {cfg.get("domain_suffix", "your-cluster.example")}
 - Persistent storage uses default StorageClass (leave storageClass: "" or omit it)
 - Resource requests: cpu 50m–500m, memory 32Mi–512Mi depending on service size
 

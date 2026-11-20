@@ -107,7 +107,7 @@ def ask(question: str):
                 pass
 
     context = "\n\n".join(context_parts)
-    prompt = f"""You are an SRE assistant for a homelab Kubernetes cluster running on kubeadm.
+    prompt = f"""You are an SRE assistant for a Kubernetes cluster.
 Current cluster state:
 {context}
 
